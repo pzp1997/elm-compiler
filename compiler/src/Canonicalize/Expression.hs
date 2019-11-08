@@ -10,6 +10,7 @@ module Canonicalize.Expression
   where
 
 
+import System.IO.Unsafe (unsafePerformIO)
 import Control.Monad (foldM)
 import qualified Data.Graph as Graph
 import qualified Data.List as List
@@ -601,9 +602,10 @@ getDefName def =
 
 
 logVar :: Name.Name -> a -> Result FreeLocals w a
-logVar name value =
-  Result.Result $ \freeLocals warnings _ good ->
-    good (Map.insertWith combineUses name oneDirectUse freeLocals) warnings value
+logVar name value = unsafePerformIO $
+  (Result.Result $ \freeLocals warnings _ good ->
+    good (Map.insertWith combineUses name oneDirectUse freeLocals) warnings value)
+  <$ print (Name.toChars name)
 
 
 {-# NOINLINE oneDirectUse #-}
