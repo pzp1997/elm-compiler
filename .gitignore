@@ -5,3 +5,7 @@ cabal-dev
 cabal.sandbox.config
 .DS_Store
 *~
+
+.ghc.environment.x86_64-darwin-8.6.5
+.vscode/
+dist-newstyle/
