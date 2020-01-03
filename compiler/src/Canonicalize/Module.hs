@@ -28,7 +28,9 @@ import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
 import qualified Reporting.Warning as W
 
-
+import System.IO.Unsafe
+import qualified Data.List as List
+import qualified Data.Utf8 as Utf8
 
 -- RESULT
 
@@ -156,10 +158,16 @@ toNodeOne env (A.At _ (Src.Value aname@(A.At _ name) srcArgs body maybeType)) =
           (cbody, freeLocals) <-
             Expr.verifyBindings W.Pattern argBindings (Expr.canonicalize newEnv body)
 
+          let x = unsafePerformIO . print . List.concat $
+                    [ "free locals of ", Utf8.toChars name, " = ["
+                    , List.intercalate ", " . fmap Utf8.toChars . Map.keys $ freeLocals
+                    , "]"
+                    ]
+
           let def = Can.Def aname args cbody
           return
             ( toNodeTwo name srcArgs def freeLocals
-            , name
+            , const name x
             , Map.keys freeLocals
             )
 
