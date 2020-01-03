@@ -189,6 +189,8 @@ Executable elm
         Reporting.Result
         Reporting.Suggest
         Reporting.Warning
+        Simplify.Expression
+        Simplify.Module
         Type.Constrain.Expression
         Type.Constrain.Module
         Type.Constrain.Pattern

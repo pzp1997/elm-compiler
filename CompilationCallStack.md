@@ -1,0 +1,31 @@
+Call-stack for compiling a function call
+
+terminal/src/Main.main
+terminal/src/Main.make
+terminal/src/Make.run
+terminal/src/Make.runHelp
+  terminal/src/Make.buildPaths
+    builder/src/Build.fromMains
+      builder/src/Build.crawlMain
+        compiler/src/Parse/Module.fromByteString
+      builder/src/Build.checkModule
+        builder/src/Build.compile
+        compiler/src/Compile.compile
+          compiler/src/Compile.canonicalize
+            compiler/src/Canonicalize/Module.canonicalize
+          compiler/src/Compile.typeCheck
+            compiler/src/Type/Solve.run
+          compiler/src/Compile.nitpick
+            compiler/src/Nitpick/PatternMatches.check
+          compiler/src/Compile.optimize
+            compiler/src/Optimize/Module.optimize
+  terminal/src/Make.toBuilder
+    builder/src/Generate.(dev|debug|prod)
+    compiler/src/Generate/JavaScript.generate
+    compiler/src/Generate/JavaScript.stateToBuilder
+    compiler/src/Generate/JavaScript.addMain
+    compiler/src/Generate/JavaScript.addGlobal
+    compiler/src/Generate/JavaScript.addGlobalHelp
+      compiler/src/Generate/JavaScript/Expression.generate
+        compiler/src/Generate/JavaScript/Expression.generateNormalCall
+      compiler/src/Generate/JavaScript.addStmt

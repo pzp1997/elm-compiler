@@ -21,6 +21,7 @@ import qualified Optimize.Module as Optimize
 import qualified Reporting.Error as E
 import qualified Reporting.Result as R
 import qualified Reporting.Render.Type.Localizer as Localizer
+import qualified Simplify.Module as Simplify
 import qualified Type.Constrain.Module as Type
 import qualified Type.Solve as Type
 
@@ -44,7 +45,8 @@ compile pkg ifaces modul =
   do  canonical   <- canonicalize pkg ifaces modul
       annotations <- typeCheck modul canonical
       ()          <- nitpick canonical
-      objects     <- optimize modul annotations canonical
+      simplified  <- simplify canonical
+      objects     <- optimize modul annotations simplified
       return (Artifacts canonical annotations objects)
 
 
@@ -80,6 +82,11 @@ nitpick canonical =
 
     Left errors ->
       Left (E.BadPatterns errors)
+
+
+simplify :: Can.Module -> Either E.Error Can.Module
+simplify canonical =
+  Right (Simplify.simplify canonical)
 
 
 optimize :: Src.Module -> Map.Map Name.Name Can.Annotation -> Can.Module -> Either E.Error Opt.LocalGraph

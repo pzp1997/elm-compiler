@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Canonicalize.Expression
   ( canonicalize
   , FreeLocals
@@ -639,7 +640,7 @@ verifyBindings context bindings (Result.Result k) =
       (\_ warnings1 err ->
           bad info warnings1 err
       )
-      (\freeLocals warnings1 value ->
+      (\(freeLocals :: I.Map Name.Name Uses) warnings1 value ->
           let
             outerFreeLocals =
               Map.difference freeLocals bindings
@@ -653,7 +654,10 @@ verifyBindings context bindings (Result.Result k) =
                 Map.foldlWithKey (addUnusedWarning context) warnings1 $
                   Map.difference bindings freeLocals
           in
-          good info warnings2 (value, outerFreeLocals)
+          {- unsafePerformIO $
+            do let printableFreeLocals :: I.Map String Int 
+                   printableFreeLocals = Map.foldlWithKey (\(key :: Name.Name) val m -> Map.insert (Name.toChars key) (_direct val) m) Map.empty freeLocals
+               return $ -} good info warnings2 (value, outerFreeLocals)
       )
 
 
@@ -695,6 +699,8 @@ findVar region (Env.Env localHome vs _ _ _ qvs _ _) name =
         Env.Local _ ->
           logVar name (Can.VarLocal name)
 
+        -- Env.TopLevel _ definition ->
+        --   logVar name definition
         Env.TopLevel _ ->
           logVar name (Can.VarTopLevel localHome name)
 
