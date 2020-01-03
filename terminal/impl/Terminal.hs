@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 module Terminal
   ( app
   , Command(..)
@@ -35,12 +37,16 @@ import qualified Data.Time.Format as Time.Format
 
 -- COMMAND
 
-timestamp :: String
-timestamp = unsafePerformIO $
-              Time.Format.formatTime
-                Time.Format.defaultTimeLocale (
-                  Time.Format.iso8601DateFormat (Just "%H:%M:%S"))
-                <$> Time.Clock.getCurrentTime
+compilationTimestamp :: String
+compilationTimestamp = __DATE__ ++ " " ++ __TIME__
+-- compilationTimestamp = unsafePerformIO $
+--               Time.Format.formatTime
+--                 Time.Format.defaultTimeLocale (
+--                   Time.Format.iso8601DateFormat (Just "%H:%M:%S"))
+--                 <$> Time.Clock.getCurrentTime
+
+-- $(stringE =<< runIO (show `fmap` Data.Time.getCurrentTime))
+
 
 _command :: String -> P.Doc -> Args args -> Flags flags -> (args -> flags -> IO ()) -> IO ()
 _command details example args_ flags_ callback =
@@ -48,7 +54,7 @@ _command details example args_ flags_ callback =
       argStrings <- Env.getArgs
       case argStrings of
         ["--version"] ->
-          do  hPutStrLn stdout (V.toChars V.compiler ++ " (dev " ++ timestamp ++ ")")
+          do  hPutStrLn stdout (V.toChars V.compiler ++ "-dev (compiled on " ++ compilationTimestamp ++ ")")
               Exit.exitSuccess
 
         chunks ->
@@ -80,7 +86,7 @@ app intro outro commands =
           Error.exitWithOverview intro outro commands
 
         ["--version"] ->
-          do  hPutStrLn stdout (V.toChars V.compiler ++ " (dev " ++ timestamp ++ ")")
+          do  hPutStrLn stdout (V.toChars V.compiler ++ "-dev (compiled on " ++ compilationTimestamp ++ ")")
               Exit.exitSuccess
 
         command : chunks ->
