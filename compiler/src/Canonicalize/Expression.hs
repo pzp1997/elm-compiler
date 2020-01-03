@@ -11,7 +11,6 @@ module Canonicalize.Expression
   where
 
 
-import System.IO.Unsafe (unsafePerformIO)
 import Control.Monad (foldM)
 import qualified Data.Graph as Graph
 import qualified Data.List as List
@@ -35,7 +34,7 @@ import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
 import qualified Reporting.Warning as W
 
-
+import qualified Debug.Trace as Debug
 
 -- RESULTS
 
@@ -603,10 +602,9 @@ getDefName def =
 
 
 logVar :: Name.Name -> a -> Result FreeLocals w a
-logVar name value = unsafePerformIO $
-  (Result.Result $ \freeLocals warnings _ good ->
-    good (Map.insertWith combineUses name oneDirectUse freeLocals) warnings value)
-  <$ print (Name.toChars name)
+logVar name value = Debug.trace (Name.toChars name) $
+  Result.Result $ \freeLocals warnings _ good ->
+    good (Map.insertWith combineUses name oneDirectUse freeLocals) warnings value
 
 
 {-# NOINLINE oneDirectUse #-}
@@ -654,10 +652,7 @@ verifyBindings context bindings (Result.Result k) =
                 Map.foldlWithKey (addUnusedWarning context) warnings1 $
                   Map.difference bindings freeLocals
           in
-          {- unsafePerformIO $
-            do let printableFreeLocals :: I.Map String Int 
-                   printableFreeLocals = Map.foldlWithKey (\(key :: Name.Name) val m -> Map.insert (Name.toChars key) (_direct val) m) Map.empty freeLocals
-               return $ -} good info warnings2 (value, outerFreeLocals)
+          good info warnings2 (value, outerFreeLocals)
       )
 
 
