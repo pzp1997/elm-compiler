@@ -30,10 +30,14 @@ import Terminal.Args.Internal
 import qualified Terminal.Args.Chomp as Chomp
 import qualified Terminal.Args.Error as Error
 
-
+import System.IO.Unsafe
+import qualified Data.Time.Clock as Time.Clock
+import qualified Data.Time.Format as Time.Format
 
 -- GET
 
+timestamp :: String
+timestamp = unsafePerformIO $ Time.Format.formatTime Time.Format.defaultTimeLocale (Time.Format.iso8601DateFormat (Just "%H:%M:%S")) <$> Time.Clock.getCurrentTime
 
 simple :: String -> P.Doc -> Args args -> Flags flags -> (args -> flags -> IO ()) -> IO ()
 simple details example args_ flags_ callback =
@@ -41,7 +45,7 @@ simple details example args_ flags_ callback =
       argStrings <- Env.getArgs
       case argStrings of
         ["--version"] ->
-          do  hPutStrLn stdout (V.toChars V.compiler ++ "-beta-1 (dev)")
+          do  hPutStrLn stdout (V.toChars V.compiler ++ "-beta-1 (dev " ++ timestamp ++ ")")
               Exit.exitSuccess
 
         chunks ->
