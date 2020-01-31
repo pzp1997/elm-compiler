@@ -7,6 +7,8 @@ module Canonicalize.Expression
   , Uses(..)
   , verifyBindings
   , gatherTypedArgs
+  , oneDirectUse
+  , combineUses
   )
   where
 
@@ -34,8 +36,6 @@ import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
 import qualified Reporting.Warning as W
 
-import qualified Debug.Trace as Debug
-
 -- RESULTS
 
 
@@ -52,8 +52,14 @@ data Uses =
     { _direct :: {-# UNPACK #-} !Int
     , _delayed :: {-# UNPACK #-} !Int
     }
+  deriving (Eq)
 
+instance Show Uses where
+  show (Uses { _direct = di, _delayed = de }) =
+    " " ++ show di ++ " direct, " ++ show de ++ " delayed"
 
+-- instance Eq Uses where
+--   (Uses xdi xde) == (Uses ydi yde) = xdi == ydi && xde == yde
 
 -- CANONICALIZE
 
@@ -602,7 +608,7 @@ getDefName def =
 
 
 logVar :: Name.Name -> a -> Result FreeLocals w a
-logVar name value = Debug.trace (Name.toChars name) $
+logVar name value =
   Result.Result $ \freeLocals warnings _ good ->
     good (Map.insertWith combineUses name oneDirectUse freeLocals) warnings value
 

@@ -30,9 +30,6 @@ import qualified Reporting.Warning as W
 
 import qualified Debug.Trace as Debug
 
-import qualified Data.List as List
-import qualified Data.Utf8 as Utf8
-
 -- RESULT
 
 
@@ -53,11 +50,11 @@ canonicalize pkg ifaces modul@(Src.Module _ exports docs imports values _ _ bino
         Local.add modul =<<
           Foreign.createInitialEnv home ifaces imports
 
-      cvalues <- canonicalizeValues env values
+      (cvalues, inlineable) <- canonicalizeValues env values
       ceffects <- Effects.canonicalize env values cunions effects
       cexports <- canonicalizeExports values cunions caliases cbinops ceffects exports
 
-      return $ Can.Module home cexports docs cvalues cunions caliases cbinops ceffects
+      return $ Can.Module home cexports docs cvalues cunions caliases cbinops ceffects inlineable
 
 
 
@@ -79,10 +76,13 @@ canonicalizeBinop (A.At _ (Src.Infix op associativity precedence func)) =
 --
 
 
-canonicalizeValues :: Env.Env -> [A.Located Src.Value] -> Result i [W.Warning] Can.Decls
+canonicalizeValues :: Env.Env -> [A.Located Src.Value] -> Result i [W.Warning] (Can.Decls, [Name.Name])
 canonicalizeValues env values =
-  do  nodes <- traverse (toNodeOne env) values
-      detectCycles (Graph.stronglyConnComp nodes)
+  do  canonicalizedValues <- traverse (toNodeOne env) values
+      let (nodes, uses) = unzip canonicalizedValues
+      let inlineable = Map.keys . Map.filter (Expr.oneDirectUse ==) . Map.unionsWith Expr.combineUses $ uses
+      Debug.trace ("inlineable = " ++ show inlineable) $
+        (\decls -> (decls, inlineable)) <$> detectCycles (Graph.stronglyConnComp nodes)
 
 
 detectCycles :: [Graph.SCC NodeTwo] -> Result i w Can.Decls
@@ -145,8 +145,14 @@ type NodeTwo =
   (Can.Def, Name.Name, [Name.Name])
 
 
-toNodeOne :: Env.Env -> A.Located Src.Value -> Result i [W.Warning] NodeOne
+traceFreeLocals :: Name.Name -> Name.Name -> Expr.FreeLocals -> Expr.FreeLocals
+traceFreeLocals home name freeLocals =
+  Debug.trace ("free locals of " ++ show home ++ "." ++ show name ++ " = " ++ show freeLocals) freeLocals
+
+
+toNodeOne :: Env.Env -> A.Located Src.Value -> Result i [W.Warning] (NodeOne, Expr.FreeLocals)
 toNodeOne env (A.At _ (Src.Value aname@(A.At _ name) srcArgs body maybeType)) =
+  let (Env.Env (ModuleName.Canonical _ home) _ _ _ _ _ _ _) = env in
   case maybeType of
     Nothing ->
       do  (args, argBindings) <-
@@ -160,12 +166,13 @@ toNodeOne env (A.At _ (Src.Value aname@(A.At _ name) srcArgs body maybeType)) =
             Expr.verifyBindings W.Pattern argBindings (Expr.canonicalize newEnv body)
 
           let def = Can.Def aname args cbody
-          Debug.trace (List.concat [ "free locals of ", Utf8.toChars name, " = [", List.intercalate ", " . fmap Utf8.toChars . Map.keys $ freeLocals, "]"]) $
-            return
-              ( toNodeTwo name srcArgs def freeLocals
+          return
+            ( ( toNodeTwo name srcArgs def freeLocals
               , name
               , Map.keys freeLocals
               )
+            , traceFreeLocals home name freeLocals
+            )
 
     Just srcType ->
       do  (Can.Forall freeVars tipe) <- Type.toAnnotation env srcType
@@ -182,9 +189,11 @@ toNodeOne env (A.At _ (Src.Value aname@(A.At _ name) srcArgs body maybeType)) =
 
           let def = Can.TypedDef aname freeVars args cbody resultType
           return
-            ( toNodeTwo name srcArgs def freeLocals
-            , name
-            , Map.keys freeLocals
+            ( ( toNodeTwo name srcArgs def freeLocals
+              , name
+              , Map.keys freeLocals
+              )
+            , traceFreeLocals home name freeLocals
             )
 
 

@@ -297,7 +297,7 @@ precDecoder =
 
 
 fromModule :: Can.Module -> Either E.Error Module
-fromModule modul@(Can.Module _ exports docs _ _ _ _ _) =
+fromModule modul@(Can.Module _ exports docs _ _ _ _ _ _) =
   case exports of
     Can.ExportEverything region ->
       Left (E.ImplicitExposing region)
@@ -461,7 +461,7 @@ onlyInExports name (A.At region _) =
 
 
 checkDefs :: Map.Map Name.Name (A.Located Can.Export) -> Src.Comment -> Map.Map Name.Name Src.Comment -> Can.Module -> Either E.Error Module
-checkDefs exportDict overview comments (Can.Module name _ _ decls unions aliases infixes effects) =
+checkDefs exportDict overview comments (Can.Module name _ _ decls unions aliases infixes effects _) =
   let
     types = gatherTypes decls Map.empty
     info = Info comments types unions aliases infixes effects

@@ -320,7 +320,7 @@ trackBuild style callback =
 
           _ <- forkIO $
             do  takeMVar mvar
-                putStrFlush "Compiling ..."
+                putStrFlush "Compiling ...\n"
                 buildLoop chan 0
                 putMVar mvar ()
 

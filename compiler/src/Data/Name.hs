@@ -90,6 +90,8 @@ toChars :: Name -> [Char]
 toChars =
   Utf8.toChars
 
+instance Show Name where
+  show = toChars
 
 toElmString :: Name -> ES.String
 toElmString =
