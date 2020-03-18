@@ -21,11 +21,13 @@ import qualified Optimize.Module as Optimize
 import qualified Reporting.Error as E
 import qualified Reporting.Result as R
 import qualified Reporting.Render.Type.Localizer as Localizer
+import qualified Simplify as Simpl
 import qualified Type.Constrain.Module as Type
 import qualified Type.Solve as Type
 
 import System.IO.Unsafe (unsafePerformIO)
 
+import AST.Display ()
 
 
 -- COMPILE
@@ -45,7 +47,11 @@ compile pkg ifaces modul =
       annotations <- typeCheck modul canonical
       ()          <- nitpick canonical
       objects     <- optimize modul annotations canonical
-      return (Artifacts canonical annotations objects)
+      objects'    <- Right $ simplify objects
+      return $ unsafePerformIO $ do
+        print objects
+        print objects'
+        return (Artifacts canonical annotations objects')
 
 
 
@@ -90,3 +96,8 @@ optimize modul annotations canonical =
 
     Left errors ->
       Left (E.BadMains (Localizer.fromModule modul) errors)
+
+simplify :: Opt.LocalGraph -> Opt.LocalGraph
+simplify g =
+  g { Opt._l_nodes=nodes' }
+  where nodes' = Map.map (Simpl.mapNode Simpl.simplify) $ Opt._l_nodes g

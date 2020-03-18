@@ -128,6 +128,7 @@ Executable elm
 
         -- from compiler/
         AST.Canonical
+        AST.Display
         AST.Optimized
         AST.Source
         AST.Utils.Binop
@@ -189,6 +190,7 @@ Executable elm
         Reporting.Result
         Reporting.Suggest
         Reporting.Warning
+        Simplify
         Type.Constrain.Expression
         Type.Constrain.Module
         Type.Constrain.Pattern
