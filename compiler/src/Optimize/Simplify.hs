@@ -21,38 +21,12 @@ buildUses :: Map.Map Opt.Global Opt.Node -> Map.Map Opt.Global (Set.Set Opt.Glob
 buildUses graph =
   let usesList = Map.map (const Set.empty) graph in
   Map.foldrWithKey (\caller node uses ->
-    case node of
-      Opt.Define _ callees ->
-        -- Set.foldr (Map.adjust (Set.insert caller)) uses callees
-        Set.foldr (Map.alter (Just . \mv ->
-          case mv of
-            Just v -> Set.insert caller v
-            Nothing -> Set.singleton caller
-        )) uses callees
-      Opt.DefineTailFunc _ _ callees ->
-        -- Set.foldr (Map.adjust (Set.insert caller)) uses callees
-        Set.foldr (Map.alter (Just . \mv ->
-          case mv of
-            Just v -> Set.insert caller v
-            Nothing -> Set.singleton caller
-        )) uses callees
-      Opt.Cycle _ _ _ callees ->
-        -- Set.foldr (Map.adjust (Set.insert caller)) uses callees
-        Set.foldr (Map.alter (Just . \mv ->
-          case mv of
-            Just v -> Set.insert caller v
-            Nothing -> Set.singleton caller
-        )) uses callees
-
-
-        -- Set.foldr (\callee uses ->
-        --   Map.alter (Just . \maybeCalleeUses ->
-        --     case maybeCalleeUses of
-        --       Just calleeUses -> Set.insert caller calleeUses
-        --       Nothing -> Set.singleton caller
-        --   ) callee uses
-        -- ) uses callees
-      _ -> uses -- TODO
+    let callees = nodeDeps node in
+    Set.foldr (Map.alter (Just . \mv ->
+      case mv of
+        Just v -> Set.insert caller v
+        Nothing -> Set.singleton caller
+    )) uses callees
   ) usesList graph
 
 mapNode :: (Opt.Expr -> Opt.Expr) -> Opt.Node -> Opt.Node
@@ -64,7 +38,6 @@ mapNode f (Opt.Cycle names l defs set) =
 mapNode f (Opt.PortIncoming e set) = Opt.PortIncoming (f e) set
 mapNode f (Opt.PortOutgoing e set) = Opt.PortOutgoing (f e) set
 mapNode f n = n
-
 
 mapExprInDef :: (Opt.Expr -> Opt.Expr) -> Opt.Def -> Opt.Def
 mapExprInDef f (Opt.Def name e) = Opt.Def name (f e)
@@ -103,33 +76,11 @@ mapGlobalVarInExpr var replacement = go
     go (Opt.Tuple e1 e2 e3) = Opt.Tuple (go e1) (go e2) (fmap go e3)
     go e = e
 
--- mapExpr :: (Expr -> Expr) -> Expr -> Expr
-
 inlineHelp :: Opt.Global -> Map.Map Opt.Global Opt.Node -> Map.Map Opt.Global (Set.Set Opt.Global) -> Opt.Global -> Opt.Node -> Opt.Node
 inlineHelp name deps uses d@(Opt.Global _ dLocalName) node
   | (uses ! d) == Set.singleton name =
       case nodeExpr (deps ! d) of
         Just replacement -> mapNode (mapGlobalVarInExpr d replacement) node
-        -- Just replacementExpr ->
-          -- Debug.trace ("extracted replacement expr: " ++ show replacementExpr) $
-          -- mapNode (\e ->
-          --   Debug.trace ("attempting to inline in this expr: " ++ show e) $
-          --   case e of
-          --     Opt.VarGlobal v ->
-          --       if v == d then
-          --         replacementExpr
-          --       else
-          --         e
-
-          --     Opt.VarLocal v ->
-          --       if v == dLocalName then
-          --         replacementExpr
-          --       else
-          --         e
-
-          --     _ ->
-          --       e
-          -- ) node
         Nothing -> node
   | otherwise = node
 
@@ -154,69 +105,10 @@ nodeNames _ = []
 
 simplify :: Opt.GlobalGraph -> Opt.GlobalGraph
 simplify (Opt.GlobalGraph deps fields) =
-  -- Debug.trace ("simplifying global graph") $
   Opt.GlobalGraph (Map.foldrWithKey aux Map.empty deps) fields
   where
     uses = buildUses deps
-    -- log name us ds names =
-    --   Debug.trace (showUses ds ++ " -> " ++ show name ++ " -> " ++ showUses us ++ " " ++ show names)
     aux name node graph =
-      -- let us = uses ! name in
       let ds = nodeDeps node in
-      let names = nodeNames node in
       let node' = Set.foldr (inlineHelp name deps uses) node ds in
-      -- log name us ds name $
       Map.insert name node' graph
-
--- VarGlobal name
-
--- updateExprInExpr :: (Opt.Expr -> Opt.Expr) -> Opt.Expr -> Opt.Expr
--- updateExprInExpr f expr =
---   Bool _
---   Chr _
---   Str _
---   Int _
---   Float _
-
---   VarLocal Name
---   VarGlobal Global
---   VarEnum Global Index.ZeroBased
---   VarBox Global
---   VarCycle ModuleName.Canonical Name
---   VarDebug Name ModuleName.Canonical A.Region (Maybe Name)
---   VarKernel Name Name
---   List [Expr]
---   Function [Name] Expr
---   Call Expr [Expr]
---   TailCall Name [(Name, Expr)]
---   If [(Expr, Expr)] Expr
---   Let Def Expr
---   Destruct Destructor Expr
---   Case Name Name (Decider Choice) [(Int, Expr)]
---   Accessor Name
---   Access Expr Name
---   Update Expr (Map.Map Name Expr)
---   Record (Map.Map Name Expr)
---   Unit
---   Tuple Expr Expr (Maybe Expr)
---   Shader Shader.Source (Set.Set Name) (Set.Set Name)
-
--- simplifyNode :: Opt.Global -> Map.Map Opt.Global Opt.Node -> Map.Map Opt.Global Opt.Node
--- simplifyNode name graph =
---   let node = graph ! name in
---   case node of
---     Opt.Define e uses ->
---       Debug.trace (show name ++ show uses) $
---         Set.foldr simplifyNode graph uses
-
-    -- DefineTailFunc [Name] Expr (Set.Set Global) -- TODO
-    -- Cycle [Name] [(Name, Expr)] [Def] (Set.Set Global) -- TODO
-    -- Ctor Index.ZeroBased Int
-    -- Enum Index.ZeroBased
-    -- Box
-    -- Link Global
-    -- Manager EffectsType
-    -- Kernel [K.Chunk] (Set.Set Global)
-    -- PortIncoming Expr (Set.Set Global)
-    -- PortOutgoing Expr (Set.Set Global)
-    -- _ -> graph
