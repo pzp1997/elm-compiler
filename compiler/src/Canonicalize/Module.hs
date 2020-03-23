@@ -81,8 +81,8 @@ canonicalizeValues env values =
   do  canonicalizedValues <- traverse (toNodeOne env) values
       let (nodes, uses) = unzip canonicalizedValues
       let inlineable = Map.keys . Map.filter (Expr.oneDirectUse ==) . Map.unionsWith Expr.combineUses $ uses
-      Debug.trace ("inlineable = " ++ show inlineable) $
-        (\decls -> (decls, inlineable)) <$> detectCycles (Graph.stronglyConnComp nodes)
+      -- Debug.trace ("inlineable = " ++ show inlineable) $
+      (\decls -> (decls, inlineable)) <$> detectCycles (Graph.stronglyConnComp nodes)
 
 
 detectCycles :: [Graph.SCC NodeTwo] -> Result i w Can.Decls
@@ -147,7 +147,8 @@ type NodeTwo =
 
 traceFreeLocals :: Name.Name -> Name.Name -> Expr.FreeLocals -> Expr.FreeLocals
 traceFreeLocals home name freeLocals =
-  Debug.trace ("free locals of " ++ show home ++ "." ++ show name ++ " = " ++ show freeLocals) freeLocals
+  freeLocals
+  -- Debug.trace ("free locals of " ++ show home ++ "." ++ show name ++ " = " ++ show freeLocals) freeLocals
 
 
 toNodeOne :: Env.Env -> A.Located Src.Value -> Result i [W.Warning] (NodeOne, Expr.FreeLocals)

@@ -1,0 +1,9 @@
+Verifying dependencies (3/7)Verifying dependencies (4/7)Verifying dependencies (5/7)Verifying dependencies (6/7)Verifying dependencies (7/7)                            Dependencies ready!
+Compiling ...
+free locals of Main.main = fromList [(factorial, 1 direct, 0 delayed)]
+free locals of Main.factorial = fromList [(factorial, 1 direct, 0 delayed)]
+inlineable = []
+Compiling (1)Success! Compiled 1 module.
+
+    Main ───> index.html
+

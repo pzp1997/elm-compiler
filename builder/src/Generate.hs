@@ -29,6 +29,7 @@ import qualified File
 import qualified Generate.JavaScript as JS
 import qualified Generate.Mode as Mode
 import qualified Nitpick.Debug as Nitpick
+import qualified Optimize.Simplify as Simpl
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
@@ -74,7 +75,7 @@ prod root details (Build.Artifacts pkg _ roots modules) =
       let graph = objectsToGlobalGraph objects
       let mode = Mode.Prod (Mode.shortenFieldNames graph)
       let mains = gatherMains pkg objects roots
-      return $ JS.generate mode graph mains
+      return $ JS.generate mode (Simpl.simplify graph) mains
 
 
 repl :: FilePath -> Details.Details -> Bool -> Build.ReplArtifacts -> N.Name -> Task B.Builder

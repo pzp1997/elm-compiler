@@ -129,6 +129,7 @@ Executable elm
 
         -- from compiler/
         AST.Canonical
+        AST.Display
         AST.Optimized
         AST.Source
         AST.Utils.Binop
@@ -159,6 +160,7 @@ Executable elm
         Optimize.Module
         Optimize.Names
         Optimize.Port
+        Optimize.Simplify
         Parse.Declaration
         Parse.Expression
         Parse.Keyword
