@@ -14,8 +14,11 @@ import Data.Map.Strict ((!))
 import qualified Data.Set as Set
 import qualified Data.List as List
 
-showUses :: Set.Set Opt.Global -> String
-showUses uses = "{" ++ List.intercalate ", " (List.map show (Set.elems uses)) ++ "}"
+showSet :: Show a => Set.Set a -> String
+showSet = ("{" ++) . (++ "}") . List.intercalate ", " . List.map show . Set.elems
+
+showMap :: (Show k, Show v) => Map.Map k v -> String
+showMap = ("{" ++) . (++ "}") . List.intercalate ", " . List.map (\(k, v) -> show k ++ ": " ++ show v) . Map.assocs
 
 buildUses :: Map.Map Opt.Global Opt.Node -> Map.Map Opt.Global (Set.Set Opt.Global)
 buildUses graph =
@@ -92,10 +95,13 @@ nodeExpr (Opt.PortIncoming e _) = Just e
 nodeExpr (Opt.PortOutgoing e _) = Just e
 nodeExpr _ = Nothing
 
+countKeys :: Map.Map a Int -> Set.Set a
+countKeys = Map.keysSet . Map.filter (> 0)
+
 nodeDeps :: Opt.Node -> Set.Set Opt.Global
-nodeDeps (Opt.Define _ ds) = ds
-nodeDeps (Opt.DefineTailFunc _ _ ds) = ds
-nodeDeps (Opt.Cycle _ _ _ ds) = ds
+nodeDeps (Opt.Define _ ds) = countKeys ds
+nodeDeps (Opt.DefineTailFunc _ _ ds) = countKeys ds
+nodeDeps (Opt.Cycle _ _ _ ds) = countKeys ds
 nodeDeps _ = Set.empty
 
 nodeNames :: Opt.Node -> [Name.Name]
@@ -103,8 +109,14 @@ nodeNames (Opt.DefineTailFunc names _ _) = names
 nodeNames (Opt.Cycle names _ _ _) = names
 nodeNames _ = []
 
+
+-- deps :: Map Global Node ~ Map Global Expr + Map Global Dependencies
+-- some Node contain Set Globals
+
 simplify :: Opt.GlobalGraph -> Opt.GlobalGraph
 simplify (Opt.GlobalGraph deps fields) =
+  -- Debug.trace (showMap deps) $
+  Debug.trace (showMap fields) $
   Opt.GlobalGraph (Map.foldrWithKey aux Map.empty deps) fields
   where
     uses = buildUses deps

@@ -187,7 +187,7 @@ addGlobalHelp :: Mode.Mode -> Graph -> Opt.Global -> State -> State
 addGlobalHelp mode graph global state =
   let
     addDeps deps someState =
-      Set.foldl' (addGlobal mode graph) someState deps
+      Set.foldl' (addGlobal mode graph) someState (Map.keysSet (Map.filter (> 0) deps))
   in
   case graph ! global of
     Opt.Define expr deps ->

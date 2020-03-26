@@ -149,17 +149,17 @@ data Main
 
 
 data Node
-  = Define Expr (Set.Set Global)
-  | DefineTailFunc [Name] Expr (Set.Set Global)
+  = Define Expr (Map.Map Global Int)
+  | DefineTailFunc [Name] Expr (Map.Map Global Int)
   | Ctor Index.ZeroBased Int
   | Enum Index.ZeroBased
   | Box
   | Link Global
-  | Cycle [Name] [(Name, Expr)] [Def] (Set.Set Global)
+  | Cycle [Name] [(Name, Expr)] [Def] (Map.Map Global Int)
   | Manager EffectsType
-  | Kernel [K.Chunk] (Set.Set Global)
-  | PortIncoming Expr (Set.Set Global)
-  | PortOutgoing Expr (Set.Set Global)
+  | Kernel [K.Chunk] (Map.Map Global Int)
+  | PortIncoming Expr (Map.Map Global Int)
+  | PortOutgoing Expr (Map.Map Global Int)
 
 
 data EffectsType = Cmd | Sub | Fx
@@ -195,7 +195,7 @@ addKernel :: Name.Name -> [K.Chunk] -> GlobalGraph -> GlobalGraph
 addKernel shortName chunks (GlobalGraph nodes fields) =
   let
     global = toKernelGlobal shortName
-    node = Kernel chunks (foldr addKernelDep Set.empty chunks)
+    node = Kernel chunks (foldr addKernelDep Map.empty chunks)
   in
   GlobalGraph
     { _g_nodes = Map.insert global node nodes
@@ -203,12 +203,12 @@ addKernel shortName chunks (GlobalGraph nodes fields) =
     }
 
 
-addKernelDep :: K.Chunk -> Set.Set Global -> Set.Set Global
+addKernelDep :: K.Chunk -> Map.Map Global Int -> Map.Map Global Int
 addKernelDep chunk deps =
   case chunk of
     K.JS _              -> deps
-    K.ElmVar home name  -> Set.insert (Global home name) deps
-    K.JsVar shortName _ -> Set.insert (toKernelGlobal shortName) deps
+    K.ElmVar home name  -> Map.insertWith (+) (Global home name) 1 deps
+    K.JsVar shortName _ -> Map.insertWith (+) (toKernelGlobal shortName) 1 deps
     K.ElmField _        -> deps
     K.JsField _         -> deps
     K.JsEnum _          -> deps
