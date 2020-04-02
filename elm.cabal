@@ -160,7 +160,6 @@ Executable elm
         Optimize.Module
         Optimize.Names
         Optimize.Port
-        Optimize.Simplify
         Parse.Declaration
         Parse.Expression
         Parse.Keyword
@@ -192,8 +191,12 @@ Executable elm
         Reporting.Result
         Reporting.Suggest
         Reporting.Warning
-        Simplify.Expression
-        Simplify.Module
+        Simplify
+        -- Simplify.Expression
+        -- Simplify.Module
+        Simplify.Inlining
+        Simplify.RewriteRules
+        Simplify.Utils
         Type.Constrain.Expression
         Type.Constrain.Module
         Type.Constrain.Pattern

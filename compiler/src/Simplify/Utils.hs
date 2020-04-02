@@ -1,36 +1,39 @@
-module Optimize.Simplify
-  ( simplify
-  )
-  where
+module Simplify.Utils where
 
 import AST.Display ()
 
 import qualified AST.Optimized as Opt
 import Control.Arrow (second)
-import qualified Debug.Trace as Debug
+import qualified Data.List as List
 import qualified Data.Name as Name
 import qualified Data.Map as Map
-import Data.Map.Strict ((!))
 import qualified Data.Set as Set
-import qualified Data.List as List
 
-showSet :: Show a => Set.Set a -> String
-showSet = ("{" ++) . (++ "}") . List.intercalate ", " . List.map show . Set.elems
+{- GETTERS -}
 
-showMap :: (Show k, Show v) => Map.Map k v -> String
-showMap = ("{" ++) . (++ "}") . List.intercalate ", " . List.map (\(k, v) -> show k ++ ": " ++ show v) . Map.assocs
+nodeExpr :: Opt.Node -> Maybe Opt.Expr
+nodeExpr (Opt.Define e _) = Just e
+nodeExpr (Opt.DefineTailFunc _ e _) = Just e
+-- nodeExpr (Opt.Cycle _ _ defs _) = Just
+nodeExpr (Opt.PortIncoming e _) = Just e
+nodeExpr (Opt.PortOutgoing e _) = Just e
+nodeExpr _ = Nothing
 
-buildUses :: Map.Map Opt.Global Opt.Node -> Map.Map Opt.Global (Set.Set Opt.Global)
-buildUses graph =
-  let usesList = Map.map (const Set.empty) graph in
-  Map.foldrWithKey (\caller node uses ->
-    let callees = nodeDeps node in
-    Set.foldr (Map.alter (Just . \mv ->
-      case mv of
-        Just v -> Set.insert caller v
-        Nothing -> Set.singleton caller
-    )) uses callees
-  ) usesList graph
+countKeys :: Map.Map a Int -> Set.Set a
+countKeys = Map.keysSet . Map.filter (> 0)
+
+nodeDeps :: Opt.Node -> Set.Set Opt.Global
+nodeDeps (Opt.Define _ ds) = countKeys ds
+nodeDeps (Opt.DefineTailFunc _ _ ds) = countKeys ds
+nodeDeps (Opt.Cycle _ _ _ ds) = countKeys ds
+nodeDeps _ = Set.empty
+
+nodeNames :: Opt.Node -> [Name.Name]
+nodeNames (Opt.DefineTailFunc names _ _) = names
+nodeNames (Opt.Cycle names _ _ _) = names
+nodeNames _ = []
+
+{- MAPPING -}
 
 mapNode :: (Opt.Expr -> Opt.Expr) -> Opt.Node -> Opt.Node
 mapNode f (Opt.Define e set) = Opt.Define (f e) set
@@ -79,48 +82,10 @@ mapGlobalVarInExpr var replacement = go
     go (Opt.Tuple e1 e2 e3) = Opt.Tuple (go e1) (go e2) (fmap go e3)
     go e = e
 
-inlineHelp :: Opt.Global -> Map.Map Opt.Global Opt.Node -> Map.Map Opt.Global (Set.Set Opt.Global) -> Opt.Global -> Opt.Node -> Opt.Node
-inlineHelp name deps uses d@(Opt.Global _ dLocalName) node
-  | (uses ! d) == Set.singleton name =
-      case nodeExpr (deps ! d) of
-        Just replacement -> mapNode (mapGlobalVarInExpr d replacement) node
-        Nothing -> node
-  | otherwise = node
+{- PRINTING -}
 
-nodeExpr :: Opt.Node -> Maybe Opt.Expr
-nodeExpr (Opt.Define e _) = Just e
-nodeExpr (Opt.DefineTailFunc _ e _) = Just e
--- nodeExpr (Opt.Cycle _ _ defs _) = Just
-nodeExpr (Opt.PortIncoming e _) = Just e
-nodeExpr (Opt.PortOutgoing e _) = Just e
-nodeExpr _ = Nothing
+showSet :: Show a => Set.Set a -> String
+showSet = ("{" ++) . (++ "}") . List.intercalate ", " . List.map show . Set.elems
 
-countKeys :: Map.Map a Int -> Set.Set a
-countKeys = Map.keysSet . Map.filter (> 0)
-
-nodeDeps :: Opt.Node -> Set.Set Opt.Global
-nodeDeps (Opt.Define _ ds) = countKeys ds
-nodeDeps (Opt.DefineTailFunc _ _ ds) = countKeys ds
-nodeDeps (Opt.Cycle _ _ _ ds) = countKeys ds
-nodeDeps _ = Set.empty
-
-nodeNames :: Opt.Node -> [Name.Name]
-nodeNames (Opt.DefineTailFunc names _ _) = names
-nodeNames (Opt.Cycle names _ _ _) = names
-nodeNames _ = []
-
-
--- deps :: Map Global Node ~ Map Global Expr + Map Global Dependencies
--- some Node contain Set Globals
-
-simplify :: Opt.GlobalGraph -> Opt.GlobalGraph
-simplify (Opt.GlobalGraph deps fields) =
-  -- Debug.trace (showMap deps) $
-  Debug.trace (showMap fields) $
-  Opt.GlobalGraph (Map.foldrWithKey aux Map.empty deps) fields
-  where
-    uses = buildUses deps
-    aux name node graph =
-      let ds = nodeDeps node in
-      let node' = Set.foldr (inlineHelp name deps uses) node ds in
-      Map.insert name node' graph
+showMap :: (Show k, Show v) => Map.Map k v -> String
+showMap = ("{" ++) . (++ "}") . List.intercalate ", " . List.map (\(k, v) -> show k ++ ": " ++ show v) . Map.assocs

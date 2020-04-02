@@ -29,7 +29,7 @@ import qualified File
 import qualified Generate.JavaScript as JS
 import qualified Generate.Mode as Mode
 import qualified Nitpick.Debug as Nitpick
-import qualified Optimize.Simplify as Simpl
+import qualified Simplify as Simpl
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
