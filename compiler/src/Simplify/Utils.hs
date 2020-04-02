@@ -7,6 +7,8 @@ import Control.Arrow (second)
 import qualified Data.List as List
 import qualified Data.Name as Name
 import qualified Data.Map as Map
+import qualified Data.MultiSet as MultiSet
+import Data.MultiSet (MultiSet)
 import qualified Data.Set as Set
 
 {- GETTERS -}
@@ -22,11 +24,11 @@ nodeExpr _ = Nothing
 countKeys :: Map.Map a Int -> Set.Set a
 countKeys = Map.keysSet . Map.filter (> 0)
 
-nodeDeps :: Opt.Node -> Set.Set Opt.Global
-nodeDeps (Opt.Define _ ds) = countKeys ds
-nodeDeps (Opt.DefineTailFunc _ _ ds) = countKeys ds
-nodeDeps (Opt.Cycle _ _ _ ds) = countKeys ds
-nodeDeps _ = Set.empty
+defsUsedByNode :: Opt.Node -> MultiSet Opt.Global
+defsUsedByNode (Opt.Define _ ds) = ds
+defsUsedByNode (Opt.DefineTailFunc _ _ ds) = ds
+defsUsedByNode (Opt.Cycle _ _ _ ds) = ds
+defsUsedByNode _ = MultiSet.empty
 
 nodeNames :: Opt.Node -> [Name.Name]
 nodeNames (Opt.DefineTailFunc names _ _) = names

@@ -2837,27 +2837,27 @@ var $elm$core$Result$isOk = function (result) {
 		return false;
 	}
 };
-var $elm$core$Platform$Cmd$batch = _Platform_batch;
-var $elm$core$Platform$Cmd$none = $elm$core$Platform$Cmd$batch(_List_Nil);
 var $elm$core$Platform$Sub$batch = _Platform_batch;
 var $elm$core$Platform$Sub$none = $elm$core$Platform$Sub$batch(_List_Nil);
+var $author$project$Main$noSubs = function (_v0) {
+	return $elm$core$Platform$Sub$none;
+};
+var $elm$core$Platform$Cmd$batch = _Platform_batch;
+var $elm$core$Platform$Cmd$none = $elm$core$Platform$Cmd$batch(_List_Nil);
+var $author$project$Main$one = 1;
 var $elm$json$Json$Decode$succeed = _Json_succeed;
-var $author$project$SecondaryModule$update = F2(
-	function (_v0, n) {
-		return _Utils_Tuple2(n + 1, $elm$core$Platform$Cmd$none);
-	});
 var $elm$core$Platform$worker = _Platform_worker;
 var $author$project$Main$main = _Platform_worker(
 	{
 		au: function (_v0) {
-			return _Utils_Tuple2(0, $elm$core$Platform$Cmd$none);
+			return _Utils_Tuple2(1, $elm$core$Platform$Cmd$none);
 		},
-		aA: function (_v1) {
+		aA: function (_v0) {
 			return $elm$core$Platform$Sub$none;
 		},
 		aC: F2(
-			function (_v0, n) {
-				return _Utils_Tuple2(n + 1, $elm$core$Platform$Cmd$none);
+			function (_v1, model) {
+				return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
 			})
 	});
 _Platform_export({'Main':{'init':$author$project$Main$main(

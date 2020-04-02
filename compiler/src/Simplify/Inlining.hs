@@ -1,9 +1,14 @@
 module Simplify.Inlining (inline) where
 
+import qualified Debug.Trace as Debug
+
 import qualified AST.Optimized as Opt
 import qualified Data.List as List
 import qualified Data.Map as Map
+import qualified Data.MultiSet as MultiSet
+import Data.MultiSet (MultiSet)
 import Data.Map.Strict ((!))
+import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
 import qualified Data.Utf8 as Utf8
 import qualified Elm.ModuleName as ModuleName
@@ -11,40 +16,51 @@ import qualified Elm.Package as Pkg
 
 import Simplify.Utils
 
--- deps :: Map Global Node ~ Map Global Expr + Map Global Dependencies
+-- usesBy :: Map Global Node ~ Map Global Expr + Map Global (MultiSet Global)
 -- some Node contain Set Globals
 inline :: Opt.GlobalGraph -> Opt.GlobalGraph
-inline (Opt.GlobalGraph deps fields) =
-  Opt.GlobalGraph (Map.foldrWithKey aux Map.empty deps) fields
+inline (Opt.GlobalGraph graph fields) =
+  -- Debug.trace (showMap graph) $
+  Debug.trace (showMap usesOf) $
+  Opt.GlobalGraph (Map.foldrWithKey aux Map.empty graph) fields
   where
-    uses = buildUses deps
-    aux name node graph =
-      let ds = nodeDeps node in
-      let node' = Set.foldr (inlineHelp name deps uses) node ds in
-      Map.insert name node' graph
+    usesOf = invertUses graph
+    aux caller node usesBy =
+      let usesByNode = MultiSet.toSet (defsUsedByNode node) in
+      let node' = Set.foldr (inlineHelp usesBy usesOf caller) node usesByNode in
+      Map.insert caller node' usesBy
 
-inlineHelp :: Opt.Global -> Map.Map Opt.Global Opt.Node -> Map.Map Opt.Global (Set.Set Opt.Global) -> Opt.Global -> Opt.Node -> Opt.Node
-inlineHelp name deps uses d node =
-  case nodeExpr (deps ! d) of
-    _ | isBasicsFunction d -> node
-    Just replacement
-      | isSimpleExpr replacement || uses ! d == Set.singleton name ->
-        mapNode (mapGlobalVarInExpr d replacement) node
-    _ -> node
+inlineHelp :: Map.Map Opt.Global Opt.Node -> Map.Map Opt.Global (MultiSet Opt.Global) -> Opt.Global -> Opt.Global -> Opt.Node -> Opt.Node
+inlineHelp usesBy usesOf caller callee callerNode =
+  if isBasicsFunction callee then callerNode
+  else
+    case Map.lookup callee usesBy >>= nodeExpr of
+      Just replacement
+        | isSimpleExpr replacement || usesOf ! callee == MultiSet.singleton caller ->
+          mapNode (mapGlobalVarInExpr callee replacement) callerNode
+      _ -> callerNode
 
-buildUses :: Map.Map Opt.Global Opt.Node -> Map.Map Opt.Global (Set.Set Opt.Global)
-buildUses graph =
-  let usesList = Map.map (const Set.empty) graph in
-  Map.foldrWithKey (\caller node uses ->
-    let callees = nodeDeps node in
-    Set.foldr (Map.alter (Just . \mv ->
-      case mv of
-        Just v -> Set.insert caller v
-        Nothing -> Set.singleton caller
-    )) uses callees
-  ) usesList graph
-
-
+{- The global graph contains info of the form Map caller (Map callee Int). We
+refer to this as a usesBy map since usesBy[node] gives you a map of the
+definitions that node uses and the number of times it uses each one. For the
+purposes of inlining, it is important to have this information organized as a
+Map callee (Map caller Int). We refer to this as a usesOf map since usesOf[node]
+gives you a map of the definitions that use that node and the number of times
+it uses each one. Transforming a usesBy map into a usesOf map amounts to
+flipping the edges in the GlobalGraph.
+-}
+invertUses :: Map.Map Opt.Global Opt.Node -> Map.Map Opt.Global (MultiSet Opt.Global)
+invertUses usesBy =
+  let usesOf = Map.map (const MultiSet.empty) usesBy in
+  Map.foldrWithKey (\caller node usesOf ->
+    let usesByCaller = defsUsedByNode node in
+    Map.foldrWithKey (\callee numberOfUses usesOf ->
+      Map.alter (Just . \maybeUsesOfCallee ->
+        let usesOfCallee = Maybe.fromMaybe Map.empty maybeUsesOfCallee in
+        Map.insert caller numberOfUses usesOfCallee
+      ) callee usesOf
+    ) usesOf usesByCaller
+  ) usesOf usesBy
 
 basicsFunctions :: [String]
 basicsFunctions =

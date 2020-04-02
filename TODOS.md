@@ -4,6 +4,7 @@ Optimizations
   - Rewrite rules
   - Constant folding
   - Constant propagation
+  - full dead code elimination
   - Uncurrying of fully applied function calls
   - In-place updates
 
