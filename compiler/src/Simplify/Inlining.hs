@@ -34,8 +34,6 @@ inlineHelp name deps uses d@(Opt.Global _ dLocalName) node
 -- some Node contain Set Globals
 inline :: Opt.GlobalGraph -> Opt.GlobalGraph
 inline (Opt.GlobalGraph deps fields) =
-  -- Debug.trace (showMap deps) $
-  Debug.trace (showMap fields) $
   Opt.GlobalGraph (Map.foldrWithKey aux Map.empty deps) fields
   where
     uses = buildUses deps

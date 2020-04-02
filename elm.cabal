@@ -119,6 +119,7 @@ Executable elm
         Data.Map.Utils
         Data.Name
         Data.NonEmptyList
+        Data.MultiSet
         Data.OneOrMore
         Data.Utf8
 
