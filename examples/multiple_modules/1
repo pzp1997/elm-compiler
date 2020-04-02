@@ -1,0 +1,10 @@
+This flag was given a bad value:
+
+    --output=main.opt.2js
+
+I need a valid <output-file> value. For example:
+
+    --output=elm.js
+    --output=index.html
+    --output=/dev/null
+

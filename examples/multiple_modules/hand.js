@@ -1,17 +1,3 @@
-<!DOCTYPE HTML>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Main</title>
-  <style>body { padding: 0; margin: 0; }</style>
-</head>
-
-<body>
-
-<pre id="elm"></pre>
-
-<script>
-try {
 (function(scope){
 'use strict';
 
@@ -2556,10 +2542,13 @@ var $elm$core$List$range = F2(
 var $elm$core$List$indexedMap = F2(
 	function (f, xs) {
 		return A3(
-			$elm$core$List$map2,
+			_List_map2,
 			f,
 			A2(
-				$elm$core$List$range,
+				F2(
+					function (lo, hi) {
+						return A3($elm$core$List$rangeHelp, lo, hi, _List_Nil);
+					}),
 				0,
 				$elm$core$List$length(xs) - 1),
 			xs);
@@ -2577,12 +2566,11 @@ var $elm$core$Basics$or = _Basics_or;
 var $elm$core$Char$isAlpha = function (_char) {
 	return $elm$core$Char$isLower(_char) || $elm$core$Char$isUpper(_char);
 };
-var $elm$core$Char$isDigit = function (_char) {
-	var code = $elm$core$Char$toCode(_char);
-	return (code <= 57) && (48 <= code);
-};
 var $elm$core$Char$isAlphaNum = function (_char) {
-	return $elm$core$Char$isLower(_char) || ($elm$core$Char$isUpper(_char) || $elm$core$Char$isDigit(_char));
+	return $elm$core$Char$isLower(_char) || ($elm$core$Char$isUpper(_char) || function (_char) {
+		var code = $elm$core$Char$toCode(_char);
+		return (code <= 57) && (48 <= code);
+	}(_char));
 };
 var $elm$core$List$reverse = function (list) {
 	return A3($elm$core$List$foldl, $elm$core$List$cons, _List_Nil, list);
@@ -2847,15 +2835,9 @@ var $elm$core$Result$isOk = function (result) {
 };
 var $elm$core$Platform$Cmd$batch = _Platform_batch;
 var $elm$core$Platform$Cmd$none = $elm$core$Platform$Cmd$batch(_List_Nil);
-var $elm$core$Platform$Sub$batch = _Platform_batch;
-var $elm$core$Platform$Sub$none = $elm$core$Platform$Sub$batch(_List_Nil);
+var $elm$core$Platform$Sub$none = _Platform_batch(_List_Nil);
 var $elm$json$Json$Decode$succeed = _Json_succeed;
-var $author$project$SecondaryModule$update = F2(
-	function (_v0, n) {
-		return _Utils_Tuple2(n + 1, $elm$core$Platform$Cmd$none);
-	});
-var $elm$core$Platform$worker = _Platform_worker;
-var $author$project$Main$main = $elm$core$Platform$worker(
+var $author$project$Main$main = _Platform_worker(
 	{
 		au: function (_v0) {
 			return _Utils_Tuple2(0, $elm$core$Platform$Cmd$none);
@@ -2863,25 +2845,10 @@ var $author$project$Main$main = $elm$core$Platform$worker(
 		aA: function (_v1) {
 			return $elm$core$Platform$Sub$none;
 		},
-		aC: $author$project$SecondaryModule$update
+		aC: F2(
+			function (_v0, n) {
+				return _Utils_Tuple2(n + 1, $elm$core$Platform$Cmd$none);
+			})
 	});
 _Platform_export({'Main':{'init':$author$project$Main$main(
 	$elm$json$Json$Decode$succeed(0))(0)}});}(this));
-
-  var app = Elm.Main.init({ node: document.getElementById("elm") });
-}
-catch (e)
-{
-  // display initialization errors (e.g. bad flags, infinite recursion)
-  var header = document.createElement("h1");
-  header.style.fontFamily = "monospace";
-  header.innerText = "Initialization Error";
-  var pre = document.getElementById("elm");
-  document.body.insertBefore(header, pre);
-  pre.innerText = e;
-  throw e;
-}
-</script>
-
-</body>
-</html>
