@@ -18,6 +18,7 @@ import qualified Parse.Primitives as Primitives
 import qualified Optimize.DecisionTree as DecisionTree
 
 import qualified Data.Map as Map
+import qualified Data.MultiSet as MultiSet
 import qualified Data.String as String
 
 -- Reporting
@@ -68,6 +69,7 @@ deriving instance Show Src.Privacy
 deriving instance Show Src.Union
 deriving instance Show Src.Value
 deriving instance Show Src.VarType
+
 deriving instance Show Src.Expr_
 deriving instance Show Src.Pattern_
 deriving instance Show Src.Type_
@@ -122,3 +124,38 @@ instance Show Opt.LocalGraph where
     ++ "\n\n\n\n" ++ (
     concat $
     map (\(k, a) -> show k ++ ": " ++ show a ++ "\n\n") $ Map.assocs n)
+
+instance Show Opt.GlobalGraph where
+  show (Opt.GlobalGraph { Opt._g_nodes=n , Opt._g_fields=f }) =
+    (concat $
+    map (\(k, a) -> show k ++ ": " ++ show a ++ "\n") $ Map.assocs f)
+    ++ "\n\n\n\n" ++ (
+    concat $
+    map (\(k, a) -> show k ++ ": " ++ show a ++ "\n\n") $ Map.assocs n)
+
+deriving instance Eq Opt.Choice
+deriving instance Eq Opt.Def
+deriving instance Eq Opt.Destructor
+deriving instance Eq Opt.EffectsType
+deriving instance Eq Opt.Path
+deriving instance Eq Kernel.Chunk
+instance Eq Shader.Source where
+  (==) _ _ = True
+
+deriving instance Eq Opt.Expr
+deriving instance Eq Opt.Node
+
+nodeDeps (Opt.Define _ deps) =  deps
+nodeDeps (Opt.DefineTailFunc _ _ deps) =  deps
+nodeDeps (Opt.Cycle _ _ _ deps) =  deps
+nodeDeps (Opt.PortIncoming _ deps) =  deps
+nodeDeps (Opt.PortOutgoing _ deps) =  deps
+nodeDeps _ = Map.empty
+
+-- diffGraphs :: Opt.GlobalGraph -> Opt.GlobalGraph -> Map.Map Opt.Node (Mu)
+diffGraphs g1 g2 = concat $
+  map (\(k, a) -> show k ++ ": " ++ show a ++ "\n\n") $ Map.assocs $
+  Map.map (\(s1, s2) -> (s1, s2, Map.difference (nodeDeps s2) (nodeDeps s1),
+                         Map.difference (nodeDeps s1) (nodeDeps s2))) $
+  Map.differenceWith (\(s1,_) s2 -> if s1 == s2 then Nothing else Just (s1, s2))
+  (Map.map (\x -> (x,Opt.Box)) $ Opt._g_nodes g1) (Opt._g_nodes g2)

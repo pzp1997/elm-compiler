@@ -34,6 +34,8 @@ import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
 
+import System.IO.Unsafe (unsafePerformIO)
+import AST.Display
 
 -- NOTE: This is used by Make, Repl, and Reactor right now. But it may be
 -- desireable to have Repl and Reactor to keep foreign objects in memory
@@ -66,6 +68,11 @@ dev root details (Build.Artifacts pkg _ roots modules) =
       let graph = objectsToGlobalGraph objects
       let mains = gatherMains pkg objects roots
       return $ JS.generate mode graph mains
+      -- let graph' = Simpl.simplify graph
+      -- return $ unsafePerformIO $ ( do
+      --                                putStrLn $ diffGraphs graph graph'
+      --                                return $ JS.generate mode graph' mains
+      --                            )
 
 
 prod :: FilePath -> Details.Details -> Build.Artifacts -> Task B.Builder
@@ -75,7 +82,8 @@ prod root details (Build.Artifacts pkg _ roots modules) =
       let graph = objectsToGlobalGraph objects
       let mode = Mode.Prod (Mode.shortenFieldNames graph)
       let mains = gatherMains pkg objects roots
-      return $ JS.generate mode (Simpl.simplify graph) mains
+      let graph' = Simpl.simplify graph
+      return $ JS.generate mode graph' mains
 
 
 repl :: FilePath -> Details.Details -> Bool -> Build.ReplArtifacts -> N.Name -> Task B.Builder

@@ -1,178 +1,216 @@
-module Simplify.RewriteRules (rewrite) where
+module Simplify.RewriteRules (rewrite, rewrite') where
 
-import qualified AST.Optimized as Opt
-import qualified Data.Name as Name
+import Data.Maybe (fromMaybe)
+import Control.Monad (mapM)
+import Data.Functor.Identity (runIdentity, Identity)
+
 import qualified Data.Map as Map
 import qualified Data.MultiSet as MultiSet
 import Data.MultiSet (MultiSet)
-import qualified Control.Monad.State.Strict as State
 
-import Elm.ModuleName as ModuleName
-import Elm.Package as Pkg
+import qualified AST.Optimized as Opt
+import qualified Data.Name as Name
+import Data.Name (Name)
+import qualified Elm.ModuleName as ModuleName
+import qualified Elm.Package as Pkg
 
 import Simplify.Utils hiding (mapNode)
+import Simplify.SimpleRule (SimpleRule (..), simpleRules)
+
+-- TOPLEVEL REWRITING
 
 rewrite :: Opt.GlobalGraph -> Opt.GlobalGraph
 rewrite g =
   g { Opt._g_nodes=nodes' }
-  where nodes' = Map.map (mapNode simplify) $ Opt._g_nodes g
+  where nodes' = Map.map rewriteNode $ Opt._g_nodes g
+
+rewrite' :: Opt.LocalGraph -> Opt.LocalGraph
+rewrite' g =
+  g { Opt._l_nodes=nodes' }
+  where nodes' = Map.map rewriteNode $ Opt._l_nodes g
 
 
--- USAGE TRACKER
+-- FOR TESTING
 
-type UsageTracker = State.State (MultiSet Opt.Global, MultiSet Opt.Global)
 
--- addVar :: Opt.Global -> UsageTracker ()
--- addVar g = State.modify (\(add, rem) -> ((MultiSet.insert g add), rem))
+recomputeDeps :: Opt.Node -> Opt.Node
+recomputeDeps (Opt.Define expr deps) =
+  Opt.Define expr (MultiSet.toMap $ exprDeps expr)
+recomputeDeps (Opt.DefineTailFunc argNames body deps) =
+  Opt.DefineTailFunc argNames body (MultiSet.toMap $ exprDeps body)
+recomputeDeps (Opt.PortIncoming decoder deps) =
+  Opt.PortIncoming decoder (MultiSet.toMap $ exprDeps decoder)
+recomputeDeps (Opt.PortOutgoing encoder deps) =
+  Opt.PortOutgoing encoder (MultiSet.toMap $ exprDeps encoder)
+recomputeDeps x = x
 
--- addVars :: MultiSet Opt.Global -> UsageTracker ()
--- addVars gs = State.modify (\(add, rem) -> ((MultiSet.union gs add), rem))
 
--- remVar :: Opt.Global -> UsageTracker ()
--- remVar g = State.modify (\(add, rem) -> (add, (MultiSet.insert g rem)))
+-- MONADS
 
--- remVars :: MultiSet Opt.Global -> UsageTracker ()
--- remVars gs = State.modify (\(add, rem) -> (add, (MultiSet.union gs rem)))
 
--- flip :: UsageTracker ()
--- flip = State.modify (\(add, rem) -> (rem, add))
+newtype Edited a = Edited (a, Bool)
 
--- getUsages :: Opt.Expr -> MultiSet Opt.Global
--- getUsages (Opt.VarGlobal g) = MultiSet.singleton g
--- getUsages (Opt.VarEnum g _) = MultiSet.singleton g -- TODO: ?
--- getUsages (Opt.VarBox g) = MultiSet.singleton g -- TODO: ?
--- getUsages (Opt.List entries) = MultiSet.unions $ map getUsages entries
--- getUsages (Opt.Function _ body) = getUsages body
--- getUsages (Opt.Call func args) =
---   getUsages func `MultiSet.union`
---   (MultiSet.unions $ map getUsages args)
--- getUsages (Opt.TailCall _ args) =
---   MultiSet.unions $ map (getUsages . snd) args
--- getUsages (Opt.If branches final) =
---   getUsages final `MultiSet.union`
---   (MultiSet.unions $ map (\(cond, body) ->
---                            getUsages cond `MultiSet.union` getUsages body
---                         ) branches)
--- getUsages (Opt.Let _ body) = getUsages body
--- getUsages (Opt.Destruct _ body) = getUsages body
--- getUsages (Opt.Case _ _ _ jumps) =
---   MultiSet.unions $ map (getUsages . snd) jumps
--- getUsages (Opt.Access record _) = getUsages record
--- getUsages _ = MultiSet.empty
--- -- TODO: Missing some cases
+instance Applicative Edited where
+  pure x = Edited (x, False)
+  (<*>) (Edited (f, b)) (Edited (x, b')) =
+    Edited (f x, b || b')
 
--- -- MAP NODE
+instance Functor Edited where
+  fmap f (Edited (x, b)) = (Edited (f x, b))
 
--- updateDeps ::
---   MultiSet Opt.Global
---   -> (MultiSet Opt.Global, MultiSet Opt.Global)
---   -> MultiSet Opt.Global
--- -- updateDeps g (add, rem) = g
--- updateDeps g (add, rem) = MultiSet.difference (MultiSet.union g add) rem
+instance Monad Edited where
+  return x = Edited (x, False)
+  (>>=) (Edited (x, b)) f = Edited (x', b || b')
+    where (Edited (x', b')) = f x
 
-updateDeps x _ = x
+liftEdit :: (a -> Maybe a) -> (a -> Edited a)
+liftEdit f x =
+  case f x of
+    Just x' -> Edited (x', True)
+    Nothing -> Edited (x, False)
 
-mapNode :: (Opt.Expr -> UsageTracker Opt.Expr) -> Opt.Node -> Opt.Node
-mapNode f (Opt.Define expr deps) =
-    Opt.Define expr (updateDeps deps depsUpdate)
-    where depsUpdate = MultiSet.empty
---   Opt.Define expr (updateDeps deps depsUpdate)
---   where (expr, depsUpdate) = State.runState (f expr) (MultiSet.empty, MultiSet.empty)
--- mapNode f (Opt.DefineTailFunc argNames body deps) =
---   Opt.DefineTailFunc argNames body (updateDeps deps depsUpdate)
---   where (body, depsUpdate) = State.runState (f body) (MultiSet.empty, MultiSet.empty)
--- mapNode f (Opt.Cycle names values functions deps) =
---   Opt.Cycle names values functions (updateDeps deps depsUpdate)
---   where
---     valuesM = (mapM (\(n, e) -> f e >>= \e -> return $ (n, e)) values)
---     (values, depsUpdate) = State.runState valuesM (MultiSet.empty, MultiSet.empty)
--- mapNode f (Opt.PortIncoming decoder deps) =
---   Opt.PortIncoming decoder (updateDeps deps depsUpdate)
---   where (decoder, depsUpdate) = State.runState (f decoder) (MultiSet.empty, MultiSet.empty)
--- mapNode f (Opt.PortOutgoing encoder deps) =
---   Opt.PortOutgoing encoder (updateDeps deps depsUpdate)
---   where (encoder, depsUpdate) = State.runState (f encoder) (MultiSet.empty, MultiSet.empty)
-mapNode _ n = n
+mapExprM :: Monad m => (Opt.Expr -> m Opt.Expr) -> Opt.Expr -> m Opt.Expr
+mapExprM f expr =
+  let f' = mapExprM f
+  in f =<< case expr of
+    (Opt.List es) -> Opt.List <$> mapM f' es
+    (Opt.Function argNames body) -> Opt.Function argNames <$> f' body
+    (Opt.Call func args) -> do
+      args <- mapM f' args
+      func <- f' func
+      return $ Opt.Call func args
+    (Opt.TailCall n args) -> do
+      es <- mapM f' $ map snd args
+      return $ Opt.TailCall n (zip (map fst args) es)
+    (Opt.If branches final) -> do
+      branches <- mapM mapBoth branches
+      final <- f' final
+      return $ Opt.If branches final
+        where mapBoth (x, y) = do
+                x <- f' x
+                y <- f' y
+                return $ (x, y)
+    (Opt.Let def expr) -> do
+      def <- case def of
+        Opt.Def n e -> Opt.Def n <$> f' e
+        Opt.TailDef n ns e -> Opt.TailDef n ns <$> f' e
+      expr <- f' expr
+      return $ Opt.Let def expr
+    (Opt.Destruct d e) -> Opt.Destruct d <$> f' e
+    (Opt.Case n1 n2 d es) -> do
+      es' <- mapM f' $ map snd es
+      return $ Opt.Case n1 n2 d (zip (map fst es) es')
+    (Opt.Access e n) -> do
+      e <- f' e
+      return $ Opt.Access e n
+    _ -> return expr
 
--- -- SIMPLIFY
+mapExpr :: (Opt.Expr -> Opt.Expr) -> Opt.Expr -> Opt.Expr
+mapExpr f = runIdentity . mapExprM (return . f)
 
--- isFxn :: Name -> String -> String -> Opt.Expr -> Bool
--- isFxn pkg _module name (Opt.VarGlobal g') =
---   g == g'
---   where g = Opt.Global
---           (ModuleName.Canonical {
---               _package = pkg
---               , _module = (Name.fromChars _module)
---               })
---           (Name.fromChars name)
--- isFxn _ _ _ _ = False
 
--- revFxn =
---   Opt.Global
---    (ModuleName.Canonical {
---        _package = Pkg.core
---        , _module = (Name.fromChars "List")
---        })
---    (Name.fromChars "reverse")
+-- REWRITE ENGINE
 
-simplify :: Opt.Expr -> UsageTracker Opt.Expr
-simplify = return
 
--- TODO: Mess with TailCall, Case, Access, Update, Record
--- simplify :: Opt.Expr -> UsageTracker Opt.Expr
--- simplify (Opt.Function l e) = do
---   e <- simplify e
---   return $ Opt.Function l e
--- simplify (Opt.Call e args) = do
---   e <- simplify e
---   args <- mapM simplify args
---   case (e, args) of
---     (f, [Opt.List l]) ->
---       if isFxn Pkg.core "List" "reverse" f then
---         remVar revFxn >> (return $ Opt.List (reverse l))
---       else
---         return $ (Opt.Call f [Opt.List l])
---     (f, es) -> return $ Opt.Call f es
--- simplify (Opt.If branches final) = do
---   branches <- mapM (\(cond, body) -> do
---                        cond <- simplify cond
---                        body <- simplify body
---                        return $ (cond, body)
---                        ) branches
---   (branches, maybeFinal) <- shortcircuit branches
---   case maybeFinal of
---     Nothing -> do
---       final <- simplify final
---       return $ Opt.If branches final
---     Just final -> do
---       remVars $ getUsages final
---       return $ Opt.If branches final
---   where
---     shortcircuit :: [(Opt.Expr, Opt.Expr)] -> UsageTracker ([(Opt.Expr, Opt.Expr)], Maybe Opt.Expr)
---     shortcircuit [] = return ([], Nothing)
---     shortcircuit (((Opt.Bool True), e) : tl) = do
---       remVars $ MultiSet.unions
---         (map (\(cond, body) ->
---                 getUsages cond `MultiSet.union` getUsages body
---              ) tl)
---       -- TODO: remVar Bool True (also do for false below)
---       return ([], Just e)
---     shortcircuit (((Opt.Bool False), e) : tl) = do
---       remVars $ getUsages e
---       shortcircuit tl
---     shortcircuit (branch : tl) = do
---       (branches, final) <- shortcircuit tl
---       return $ (branch : branches, final)
--- simplify (Opt.Let def body) = do
---   body <- simplify body
---   return $ Opt.Let def body
--- simplify (Opt.Tuple e1 e2 m) = do
---   e1 <- simplify e1
---   e2 <- simplify e2
---   -- TODO: Use monads
---   case m of
---     Nothing -> return $ Opt.Tuple e1 e2 Nothing
---     Just m -> do
---       m <- simplify m
---       return $ Opt.Tuple e1 e2 (Just m)
--- simplify x = return x
+editUntilFixpoint :: (a -> Edited a) -> a -> Edited a
+editUntilFixpoint f x =
+  let e@(Edited (x', b)) = f x
+  in if b then e >>= editUntilFixpoint f else Edited (x', False)
+
+mapUntilFixpoint :: (Opt.Expr -> Maybe Opt.Expr) -> Opt.Expr -> Edited Opt.Expr
+mapUntilFixpoint f = mapExprM $ editUntilFixpoint $ liftEdit f
+
+updateDeps :: Opt.Expr -> Map.Map Opt.Global Int -> (Opt.Expr, Map.Map Opt.Global Int)
+updateDeps expr deps = (expr', deps')
+  where
+    Edited (expr', b) = mapUntilFixpoint rewriteExpr expr
+    deps' = if b then MultiSet.toMap $ exprDeps expr' else deps
+
+-- TODO: Include Cycle
+rewriteNode :: Opt.Node -> Opt.Node
+rewriteNode (Opt.Define expr deps) =
+  Opt.Define expr' deps'
+  where (expr', deps') = updateDeps expr deps
+rewriteNode (Opt.DefineTailFunc argNames body deps) =
+  Opt.DefineTailFunc argNames body' deps'
+  where (body', deps') = updateDeps body deps
+rewriteNode (Opt.PortIncoming decoder deps) =
+  Opt.PortIncoming decoder' deps'
+  where (decoder', deps') = updateDeps decoder deps
+rewriteNode (Opt.PortOutgoing encoder deps) =
+  Opt.PortOutgoing encoder' deps'
+  where (encoder', deps') = updateDeps encoder deps
+rewriteNode x = x
+
+
+-- REWRITE RULES
+
+
+rewriteExpr :: Opt.Expr -> Maybe Opt.Expr
+rewriteExpr (Opt.Let (Opt.Def var expr) body) =
+  -- TODO: Add support for TailDef
+  let numUses = countUses body MultiSet.! var
+  in if numUses == 0 then Just body
+  else if numUses == 1 || isSmall expr then
+    Just $ subst var expr body
+  else Nothing
+rewriteExpr (Opt.Call func args) =
+  case func of
+    (Opt.Function argNames body) ->
+      if null argNames || null args then Nothing
+      else Just $ betaReduce argNames body args
+    (Opt.VarGlobal funcName) ->
+      foldl (\acc (SimpleRule funcName' rewrite) ->
+                if funcName == funcName' then
+                  case rewrite args of
+                    Nothing -> acc
+                    Just x -> Just x
+                else acc)
+         Nothing simpleRules
+    _ -> Nothing
+rewriteExpr (Opt.If branches final) =
+  let (branches', maybeFinal) = shortcircuit branches
+  in case branches' of
+    [] -> Just $ (fromMaybe final maybeFinal)
+    _ ->
+      if length branches == length branches' then Nothing
+      else Just $ Opt.If branches' (fromMaybe final maybeFinal)
+rewriteExpr _ = Nothing
+
+betaReduce :: [Name] -> Opt.Expr -> [Opt.Expr] -> Opt.Expr
+betaReduce [] body [] = body
+betaReduce [] body args =
+  -- Should never happen in well-typed formula
+  Opt.Call (Opt.Function [] body) args
+betaReduce argNames body [] = Opt.Function argNames body
+betaReduce (argName : argNames) body (arg : args) =
+  Opt.Let (Opt.Def argName arg) (betaReduce argNames body args)
+
+shortcircuit :: [(Opt.Expr, Opt.Expr)] -> ([(Opt.Expr, Opt.Expr)], Maybe Opt.Expr)
+shortcircuit [] = ([], Nothing)
+shortcircuit (((Opt.Bool True), e) : tl) = ([], Just e)
+shortcircuit (((Opt.Bool False), e) : tl) = shortcircuit tl
+shortcircuit (branch : tl) = (branch : branches, final)
+  where (branches, final) = shortcircuit tl
+
+subst :: Name -> Opt.Expr -> Opt.Expr -> Opt.Expr
+subst var expr = mapExpr replaceVar
+  where
+    replaceVar :: Opt.Expr -> Opt.Expr
+    replaceVar (Opt.VarLocal var') | var == var' = expr
+    replaceVar e = e
+
+isSmall :: Opt.Expr -> Bool
+isSmall (Opt.Bool _) = True
+isSmall (Opt.Chr _) = True
+isSmall (Opt.Str _) = True
+isSmall (Opt.Int _) = True
+isSmall (Opt.Float _) = True
+isSmall (Opt.VarLocal _) = True
+isSmall (Opt.VarGlobal _) = True
+isSmall (Opt.VarEnum _ _) = True
+isSmall (Opt.VarBox _) = True
+isSmall (Opt.VarCycle _ _) = True
+isSmall (Opt.VarKernel _ _) = True
+isSmall Opt.Unit = True
+isSmall _ = False
