@@ -148,6 +148,7 @@ data Main
       }
 
 
+-- TODO: Convert to MultiSets
 data Node
   = Define Expr (Map.Map Global Int)
   | DefineTailFunc [Name] Expr (Map.Map Global Int)

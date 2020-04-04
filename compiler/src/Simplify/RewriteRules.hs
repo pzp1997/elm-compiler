@@ -71,8 +71,8 @@ liftEdit f x =
 
 mapExprM :: Monad m => (Opt.Expr -> m Opt.Expr) -> Opt.Expr -> m Opt.Expr
 mapExprM f expr =
-  let f' = mapExprM f
-  in f =<< case expr of
+  let f' = mapExprM f in
+  f =<< case expr of
     (Opt.List es) -> Opt.List <$> mapM f' es
     (Opt.Function argNames body) -> Opt.Function argNames <$> f' body
     (Opt.Call func args) -> do

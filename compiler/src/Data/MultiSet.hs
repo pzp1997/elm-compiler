@@ -3,8 +3,10 @@ module Data.MultiSet where
 
 import Data.Maybe (fromMaybe)
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 newtype MultiSet a = MultiSet (Map.Map a Int)
+  deriving (Eq, Show)
 
 empty :: MultiSet a
 empty = MultiSet Map.empty
@@ -13,8 +15,7 @@ empty = MultiSet Map.empty
 (!) (MultiSet s) x = fromMaybe 0 $ Map.lookup x s
 
 insert :: Ord a => a -> MultiSet a -> MultiSet a
-insert x (MultiSet s) = MultiSet $
-  Map.alter (\x -> case x of Nothing -> Just 1; Just n -> Just $ n + 1) x s
+insert x (MultiSet s) = MultiSet $ Map.insertWith (+) x 1 s
 
 union :: Ord a => MultiSet a -> MultiSet a -> MultiSet a
 union (MultiSet s) (MultiSet t) = MultiSet $ Map.unionWith (+) s t
@@ -33,6 +34,13 @@ fromMap = MultiSet
 
 toMap :: Ord a => MultiSet a -> Map.Map a Int
 toMap (MultiSet s) = Map.filter (> 0) s
+
+toSet :: Ord a => MultiSet a -> Set.Set a
+toSet (MultiSet s) =
+    Map.foldlWithKey (\acc x n ->
+        if n > 0 then Set.insert x acc
+        else acc
+    ) Set.empty s
 
 fold :: Ord b => (a -> b -> a) -> a -> MultiSet b -> a
 fold f base (MultiSet s) = Map.foldlWithKey (\acc key _ -> f acc key) base s

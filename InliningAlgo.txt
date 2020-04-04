@@ -1,0 +1,31 @@
+// TODO how about recursive definitions
+// TODO this only works for global definitions... does this also work for LocalGraphs?
+
+definitions = {name -> expr}
+uses = {name -> Set<name>}
+deps = {name -> Set<name>}
+
+for each (name, expr) in definitions {
+    us = uses[name]
+    ds = deps[name]
+
+    if (us is a singleton set containing u) {
+        // inline expr in u
+        replace(name, with:expr, in:definitions[u])
+
+        // update u
+        remove(name, from:deps[u])
+        union(deps[name], into:deps[u])
+
+        // update ds
+        for each d in ds {
+            remove(name, from:uses[d])
+            insert(u, into:uses[d])
+        }
+
+        // remove name
+        delete(name, from:definitions)
+        delete(name, from:uses)
+        delete(name, from:deps)
+    }
+}

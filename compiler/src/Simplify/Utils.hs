@@ -5,6 +5,8 @@ import AST.Display ()
 import Control.Arrow (second)
 import qualified Data.List as List
 import qualified Data.Map as Map
+import qualified Data.MultiSet as MultiSet
+import Data.MultiSet (MultiSet)
 import qualified Data.Set as Set
 import Data.Maybe (fromMaybe)
 
@@ -28,11 +30,12 @@ nodeExpr _ = Nothing
 countKeys :: Map.Map a Int -> Set.Set a
 countKeys = Map.keysSet . Map.filter (> 0)
 
-nodeDeps :: Opt.Node -> Set.Set Opt.Global
-nodeDeps (Opt.Define _ ds) = countKeys ds
-nodeDeps (Opt.DefineTailFunc _ _ ds) = countKeys ds
-nodeDeps (Opt.Cycle _ _ _ ds) = countKeys ds
-nodeDeps _ = Set.empty
+-- TODO: Should this include Ports?
+defsUsedByNode :: Opt.Node -> MultiSet Opt.Global
+defsUsedByNode (Opt.Define _ ds) = MultiSet.fromMap ds
+defsUsedByNode (Opt.DefineTailFunc _ _ ds) = MultiSet.fromMap ds
+defsUsedByNode (Opt.Cycle _ _ _ ds) = MultiSet.fromMap ds
+defsUsedByNode _ = MultiSet.empty
 
 -- TODO: Missing some json functions for main?
 exprDeps :: Opt.Expr -> MultiSet Opt.Global
