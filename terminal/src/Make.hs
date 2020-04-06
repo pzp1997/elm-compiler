@@ -7,6 +7,7 @@ module Make
   , reportType
   , output
   , docsFile
+  , simplify
   )
   where
 
@@ -40,6 +41,7 @@ data Flags =
   Flags
     { _debug :: Bool
     , _optimize :: Bool
+    , _simplify :: Maybe Generate.SimplifyOptions
     , _output :: Maybe Output
     , _report :: Maybe ReportType
     , _docs :: Maybe FilePath
@@ -64,7 +66,7 @@ type Task a = Task.Task Exit.Make a
 
 
 run :: [FilePath] -> Flags -> IO ()
-run paths flags@(Flags _ _ _ report _) =
+run paths flags@(Flags _ _ _ _ report _) =
   do  style <- getStyle report
       maybeRoot <- Stuff.findRoot
       Reporting.attemptWithStyle style Exit.makeToReport $
@@ -74,10 +76,10 @@ run paths flags@(Flags _ _ _ report _) =
 
 
 runHelp :: FilePath -> [FilePath] -> Reporting.Style -> Flags -> IO (Either Exit.Make ())
-runHelp root paths style (Flags debug optimize maybeOutput _ maybeDocs) =
+runHelp root paths style (Flags debug optimize simplifyOptions maybeOutput _ maybeDocs) =
   BW.withScope $ \scope ->
   Stuff.withRootLock root $ Task.run $
-  do  desiredMode <- getMode debug optimize
+  do  desiredMode <- getMode debug optimize simplifyOptions
       details <- Task.eio Exit.MakeBadDetails (Details.load style scope root)
       case paths of
         [] ->
@@ -129,13 +131,14 @@ getStyle report =
     Just Json -> return Reporting.json
 
 
-getMode :: Bool -> Bool -> Task DesiredMode
-getMode debug optimize =
-  case (debug, optimize) of
-    (True , True ) -> Task.throw Exit.MakeCannotOptimizeAndDebug
-    (True , False) -> return Debug
-    (False, False) -> return Dev
-    (False, True ) -> return Prod
+getMode :: Bool -> Bool -> Maybe Generate.SimplifyOptions -> Task DesiredMode
+getMode debug optimize simplifyOptions =
+  case (debug, optimize, simplifyOptions) of
+    (_, _, Just opts) -> return $ Simplify opts
+    (True , True , _) -> Task.throw Exit.MakeCannotOptimizeAndDebug
+    (True , False, _) -> return Debug
+    (False, False, _) -> return Dev
+    (False, True , _) -> return Prod
 
 
 getExposed :: Details.Details -> Task (NE.List ModuleName.Raw)
@@ -252,7 +255,7 @@ generate style target builder names =
 -- TO BUILDER
 
 
-data DesiredMode = Debug | Dev | Prod
+data DesiredMode = Debug | Dev | Prod | Simplify Generate.SimplifyOptions
 
 
 toBuilder :: FilePath -> Details.Details -> DesiredMode -> Build.Artifacts -> Task B.Builder
@@ -262,7 +265,7 @@ toBuilder root details desiredMode artifacts =
       Debug -> Generate.debug root details artifacts
       Dev   -> Generate.dev   root details artifacts
       Prod  -> Generate.prod  root details artifacts
-
+      Simplify opts -> Generate.prod' opts root details artifacts
 
 
 -- PARSERS
@@ -317,3 +320,22 @@ hasExt ext path =
 isDevNull :: String -> Bool
 isDevNull name =
   name == "/dev/null" || name == "NUL" || name == "$null"
+
+simplify :: Parser Generate.SimplifyOptions
+simplify =
+  Parser
+  { _singular = "optimization"
+  , _plural = "optimizations"
+  , _parser = parseSimplify
+  , _suggest = \_ -> return []
+  , _examples = \_ -> return []
+  }
+
+parseSimplify :: String -> Maybe Generate.SimplifyOptions
+parseSimplify s =
+  Just $ Generate.SimplifyOptions
+  { Generate.opt = elem "opt" parsed
+  , Generate.dump = elem "dump" parsed
+  , Generate.dumpOrig = elem "dumporig" parsed
+  }
+  where parsed = words s

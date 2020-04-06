@@ -8,4 +8,4 @@ import Simplify.Inlining (inline)
 import Simplify.RewriteRules (rewrite)
 
 simplify :: Opt.GlobalGraph -> Opt.GlobalGraph
-simplify = inline . rewrite
+simplify = rewrite

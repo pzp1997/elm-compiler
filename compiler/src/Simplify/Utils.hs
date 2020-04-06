@@ -107,7 +107,8 @@ countUses (Opt.If branches final) =
   (MultiSet.unions $ map (countUses . snd) branches)
 countUses (Opt.Let (Opt.Def _ expr) body) = countUses expr <> countUses body
 countUses (Opt.Let (Opt.TailDef _ _ expr) body) = countUses expr <> countUses body
-countUses (Opt.Destruct _ expr) = countUses expr
+countUses (Opt.Destruct (Opt.Destructor _ path) expr) =
+  MultiSet.singleton (rootOfPath path) <> countUses expr
 countUses (Opt.Case _ _ decider choices) =
   deciderUses decider <> (MultiSet.unions $ map (countUses . snd) choices)
   where
@@ -126,6 +127,12 @@ countUses (Opt.Record record) =
 countUses (Opt.Tuple e1 e2 me3) =
   countUses e1 <> countUses e2 <> fromMaybe MultiSet.empty (countUses <$> me3)
 countUses _ = MultiSet.empty
+
+rootOfPath :: Opt.Path -> Name
+rootOfPath (Opt.Index _ path) = rootOfPath path
+rootOfPath (Opt.Field _ path) = rootOfPath path
+rootOfPath (Opt.Unbox path) = rootOfPath path
+rootOfPath (Opt.Root var) = var
 
 {- MAPPING -}
 
