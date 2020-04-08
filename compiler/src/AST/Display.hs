@@ -145,17 +145,17 @@ instance Eq Shader.Source where
 deriving instance Eq Opt.Expr
 deriving instance Eq Opt.Node
 
-nodeDeps (Opt.Define _ deps) =  deps
-nodeDeps (Opt.DefineTailFunc _ _ deps) =  deps
-nodeDeps (Opt.Cycle _ _ _ deps) =  deps
-nodeDeps (Opt.PortIncoming _ deps) =  deps
-nodeDeps (Opt.PortOutgoing _ deps) =  deps
-nodeDeps _ = Map.empty
+nodeDeps (Opt.Define _ deps) = deps
+nodeDeps (Opt.DefineTailFunc _ _ deps) = deps
+nodeDeps (Opt.Cycle _ _ _ deps) = deps
+nodeDeps (Opt.PortIncoming _ deps) = deps
+nodeDeps (Opt.PortOutgoing _ deps) = deps
+nodeDeps _ = MultiSet.empty
 
 -- diffGraphs :: Opt.GlobalGraph -> Opt.GlobalGraph -> Map.Map Opt.Node (Mu)
 diffGraphs g1 g2 = concat $
   map (\(k, a) -> show k ++ ": " ++ show a ++ "\n\n") $ Map.assocs $
-  Map.map (\(s1, s2) -> (s1, s2, Map.difference (nodeDeps s2) (nodeDeps s1),
-                         Map.difference (nodeDeps s1) (nodeDeps s2))) $
+  Map.map (\(s1, s2) -> (s1, s2, MultiSet.difference (nodeDeps s2) (nodeDeps s1),
+                         MultiSet.difference (nodeDeps s1) (nodeDeps s2))) $
   Map.differenceWith (\(s1,_) s2 -> if s1 == s2 then Nothing else Just (s1, s2))
   (Map.map (\x -> (x,Opt.Box)) $ Opt._g_nodes g1) (Opt._g_nodes g2)

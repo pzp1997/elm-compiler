@@ -37,13 +37,13 @@ rewrite' g =
 
 recomputeDeps :: Node -> Node
 recomputeDeps (Define expr deps) =
-  Define expr (MultiSet.toMap $ exprDeps expr)
+  Define expr (exprDeps expr)
 recomputeDeps (DefineTailFunc argNames body deps) =
-  DefineTailFunc argNames body (MultiSet.toMap $ exprDeps body)
+  DefineTailFunc argNames body (exprDeps body)
 recomputeDeps (PortIncoming decoder deps) =
-  PortIncoming decoder (MultiSet.toMap $ exprDeps decoder)
+  PortIncoming decoder (exprDeps decoder)
 recomputeDeps (PortOutgoing encoder deps) =
-  PortOutgoing encoder (MultiSet.toMap $ exprDeps encoder)
+  PortOutgoing encoder (exprDeps encoder)
 recomputeDeps x = x
 
 
@@ -157,9 +157,9 @@ instance Monad (Collect a) where
   (>>=) (Collect (x, l)) f = Collect (x', l ++ l')
     where (Collect (x', l')) = f x
 
-foldExpr :: (Expr -> a -> a) -> a -> Expr -> a
-foldExpr f base e = foldr ($) base final
-  where collect expr = Collect (expr, [f expr])
+foldExpr :: (Expr -> a) -> (a -> a -> a) -> a -> Expr -> a
+foldExpr f combine base e = foldr ($) base final
+  where collect expr = Collect (expr, [combine (f expr)])
         Collect (_, final) = mapExprM collect e
 
 -- REWRITE ENGINE
@@ -173,16 +173,18 @@ editUntilFixpoint f x =
 mapUntilFixpoint :: (Expr -> Maybe Expr) -> Expr -> Edited Expr
 mapUntilFixpoint f = mapExprM $ editUntilFixpoint $ liftEdit f
 
-updateDeps :: Expr -> Map Global Int -> (Expr, Map Global Int)
+
+
+updateDeps :: Expr -> MultiSet Global -> (Expr, MultiSet Global)
 updateDeps expr deps = (expr', deps')
   where
     Edited (expr', b) = mapUntilFixpoint rewriteExpr expr
     deps' = if b then
-      (MultiSet.toMap $ exprDeps expr')
-      -- <> MultiSet.filter (\(Global (ModuleName.Canonical pkg _) _) -> pkg == Pkg.json)
+      exprDeps expr'
+      <> MultiSet.filter (\(Global (ModuleName.Canonical pkg _) _) -> pkg == Pkg.json) deps
       else deps
 
--- TODO: Include Cycle
+-- TODO: Include Ports
 rewriteNode :: Node -> Node
 rewriteNode (Define expr deps) =
   Define expr' deps'
@@ -196,22 +198,17 @@ rewriteNode (Cycle names es defs deps) =
     Edited (defs', b) = mapM (mapDefM $ mapUntilFixpoint rewriteExpr) defs
     deps' =
       if b then
-        MultiSet.toMap $ MultiSet.unions $ map (exprDeps . exprOfDep) defs'
+        MultiSet.unions $ map (exprDeps . exprOfDep) defs'
       else deps
     mapDefM :: Monad m => (Expr -> m Expr) -> Def -> m Def
     mapDefM f (Def name expr) = Def name <$> f expr
     mapDefM f (TailDef name names expr) = TailDef name names <$> f expr
-rewriteNode (PortIncoming decoder deps) =
-  PortIncoming decoder' deps'
-  where (decoder', deps') = updateDeps decoder deps
-rewriteNode (PortOutgoing encoder deps) =
-  PortOutgoing encoder' deps'
-  where (encoder', deps') = updateDeps encoder deps
 rewriteNode x = x
 
 exprOfDep :: Def -> Expr
 exprOfDep (Def _ expr) = expr
 exprOfDep (TailDef _ _ expr) = expr
+
 
 -- REWRITE RULES
 
@@ -219,14 +216,14 @@ exprOfDep (TailDef _ _ expr) = expr
 rewriteExpr :: Expr -> Maybe Expr
 rewriteExpr (Let (Def var expr) body) =
   let numUses = countUses body MultiSet.! var
-  in if usedAsRoot var body then Nothing
+  in if uninlineable var body then Nothing
   else if numUses == 0 then Just body
   else if numUses == 1 || isSmall expr then
     Just $ subst var expr body
   else Nothing
 rewriteExpr (Destruct (Destructor var _) body) =
   let numUses = countUses body MultiSet.! var
-  in if not (usedAsRoot var body) && numUses == 0
+  in if not (uninlineable var body) && numUses == 0
   then Just body else Nothing
 -- TODO: Add support for TailDef
 rewriteExpr (Call func args) =
@@ -252,12 +249,13 @@ rewriteExpr (If branches final) =
       else Just $ If branches' (fromMaybe final maybeFinal)
 rewriteExpr _ = Nothing
 
-usedAsRoot :: Name -> Expr -> Bool
-usedAsRoot var expr =
-  foldExpr (\e -> (aux e ||)) False expr
+uninlineable :: Name -> Expr -> Bool
+uninlineable var expr =
+  foldExpr aux (||) False expr
   where
     aux :: Expr -> Bool
     aux (Destruct (Destructor _ path) _) | var == rootOfPath path = True
+    aux (Case _ root _ _) | var == root = True
     aux _ = False
 
 betaReduce :: [Name] -> Expr -> [Expr] -> Expr

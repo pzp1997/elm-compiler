@@ -27,17 +27,14 @@ nodeExpr (Opt.PortIncoming e _) = Just e
 nodeExpr (Opt.PortOutgoing e _) = Just e
 nodeExpr _ = Nothing
 
-countKeys :: Map.Map a Int -> Set.Set a
-countKeys = Map.keysSet . Map.filter (> 0)
-
 -- TODO: Should this include Ports?
 defsUsedByNode :: Opt.Node -> MultiSet Opt.Global
-defsUsedByNode (Opt.Define _ ds) = MultiSet.fromMap ds
-defsUsedByNode (Opt.DefineTailFunc _ _ ds) = MultiSet.fromMap ds
-defsUsedByNode (Opt.Cycle _ _ _ ds) = MultiSet.fromMap ds
+defsUsedByNode (Opt.Define _ ds) = ds
+defsUsedByNode (Opt.DefineTailFunc _ _ ds) = ds
+defsUsedByNode (Opt.Cycle _ _ _ ds) = ds
 defsUsedByNode _ = MultiSet.empty
 
--- TODO: Missing some json functions for main?
+-- TODO: Missing some json functions for main? Rewrite with foldExpr?
 exprDeps :: Opt.Expr -> MultiSet Opt.Global
 exprDeps (Opt.Bool b) =
   MultiSet.singleton (Opt.Global ModuleName.basics $ Name.fromChars $
@@ -145,6 +142,14 @@ mapNode f (Opt.Cycle names l defs set) =
 mapNode f (Opt.PortIncoming e set) = Opt.PortIncoming (f e) set
 mapNode f (Opt.PortOutgoing e set) = Opt.PortOutgoing (f e) set
 mapNode f n = n
+
+mapNodeDependencies :: (MultiSet Opt.Global -> MultiSet Opt.Global) -> Opt.Node -> Opt.Node
+mapNodeDependencies f (Opt.Define e set) = Opt.Define e (f set)
+mapNodeDependencies f (Opt.DefineTailFunc names e set) = Opt.DefineTailFunc names e (f set)
+mapNodeDependencies f (Opt.Cycle names l defs set) = Opt.Cycle names l defs (f set)
+mapNodeDependencies f (Opt.PortIncoming e set) = Opt.PortIncoming e (f set)
+mapNodeDependencies f (Opt.PortOutgoing e set) = Opt.PortOutgoing e (f set)
+mapNodeDependencies f n = n
 
 mapExprInDef :: (Opt.Expr -> Opt.Expr) -> Opt.Def -> Opt.Def
 mapExprInDef f (Opt.Def name e) = Opt.Def name (f e)

@@ -17,6 +17,18 @@ empty = MultiSet Map.empty
 insert :: Ord a => a -> MultiSet a -> MultiSet a
 insert x (MultiSet s) = MultiSet $ Map.insertWith (+) x 1 s
 
+-- put :: Ord a => a -> Int -> MultiSet a -> MultiSet a
+-- put x n (MultiSet m) = MultiSet $ Map.insert x n m
+
+insertMany :: Ord a => a -> Int -> MultiSet a -> MultiSet a
+insertMany x n (MultiSet m) = MultiSet $ Map.insertWith (+) x n m
+
+removeOne :: Ord a => a -> MultiSet a -> MultiSet a
+removeOne x (MultiSet m) = MultiSet $ Map.adjust (\n -> n - 1) x m
+
+removeAll :: Ord a => a -> MultiSet a -> MultiSet a
+removeAll x (MultiSet m) = MultiSet $ Map.delete x m
+
 union :: Ord a => MultiSet a -> MultiSet a -> MultiSet a
 union (MultiSet s) (MultiSet t) = MultiSet $ Map.unionWith (+) s t
 
@@ -37,16 +49,20 @@ toMap (MultiSet s) = Map.filter (> 0) s
 
 toSet :: Ord a => MultiSet a -> Set.Set a
 toSet (MultiSet s) =
-    Map.foldlWithKey (\acc x n ->
-        if n > 0 then Set.insert x acc
-        else acc
-    ) Set.empty s
+  Map.foldlWithKey (\acc x n -> if n > 0 then Set.insert x acc else acc) Set.empty s
 
 fold :: Ord b => (a -> b -> a) -> a -> MultiSet b -> a
 fold f base (MultiSet s) = Map.foldlWithKey (\acc key _ -> f acc key) base s
 
 filter :: Ord a => (a -> Bool) -> MultiSet a -> MultiSet a
 filter f (MultiSet s) = MultiSet $ Map.filterWithKey (\k _ -> f k) s
+
+foldlWithKey :: (a -> k -> Int -> a) -> a -> MultiSet k -> a
+foldlWithKey f base (MultiSet s) = Map.foldlWithKey f base s
+
+foldrWithKey :: (k -> Int -> b -> b) -> b -> MultiSet k -> b
+foldrWithKey f base (MultiSet s) = Map.foldrWithKey f base s
+
 
 instance Ord a => Semigroup (MultiSet a) where
   (<>) = union
