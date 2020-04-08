@@ -3,6 +3,7 @@ module Simplify.Inlining (inline) where
 import qualified Debug.Trace as Debug
 
 import qualified AST.Optimized as Opt
+import Control.Monad (guard)
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.MultiSet as MultiSet
@@ -21,24 +22,46 @@ import Simplify.Utils
 inline :: Opt.GlobalGraph -> Opt.GlobalGraph
 inline (Opt.GlobalGraph graph fields) =
   -- Debug.trace (showMap graph) $
+  let usesOf = invertUses graph in
   Debug.trace (showMap usesOf) $
-  Opt.GlobalGraph (Map.foldrWithKey aux Map.empty graph) fields
+  let (graph', _) = Map.foldrWithKey aux (Map.empty, usesOf) graph in
+  Opt.GlobalGraph graph' fields
   where
-    usesOf = invertUses graph
-    aux caller node usesBy =
+    aux caller node (usesBy, usesOf) =
       let usesByNode = MultiSet.toSet (defsUsedByNode node) in
-      let node' = Set.foldr (inlineHelp usesBy usesOf caller) node usesByNode in
-      Map.insert caller node' usesBy
+      let (usesBy', usesOf', node') = Set.foldr (inlineHelp caller) (usesBy, usesOf, node) usesByNode in
+      (Map.insert caller node' usesBy', usesOf')
 
-inlineHelp :: Map.Map Opt.Global Opt.Node -> Map.Map Opt.Global (MultiSet Opt.Global) -> Opt.Global -> Opt.Global -> Opt.Node -> Opt.Node
-inlineHelp usesBy usesOf caller callee callerNode =
-  if isBasicsFunction callee then callerNode
-  else
-    case Map.lookup callee usesBy >>= nodeExpr of
-      Just replacement
-        | isSimpleExpr replacement || usesOf ! callee == MultiSet.singleton caller ->
-          mapNode (mapGlobalVarInExpr callee replacement) callerNode
-      _ -> callerNode
+inlineHelp :: Opt.Global -> Opt.Global -> (Map.Map Opt.Global Opt.Node, Map.Map Opt.Global (MultiSet Opt.Global), Opt.Node) -> (Map.Map Opt.Global Opt.Node, Map.Map Opt.Global (MultiSet Opt.Global), Opt.Node)
+inlineHelp caller callee acc@(usesBy, usesOf, callerNode) =
+  if isBasicsFunction callee then acc
+  else Maybe.fromMaybe acc $ do
+    calleeNode <- Map.lookup callee usesBy
+    replacement <- nodeExpr calleeNode
+    usesOfCallee <- Map.lookup callee usesOf
+    guard (isSimpleExpr replacement || usesOfCallee == MultiSet.singleton caller)
+    let usedByCallee = defsUsedByNode calleeNode
+    -- inline callee in caller node
+    let callerNode' = mapNode (mapGlobalVarInExpr callee replacement) callerNode
+    -- update dependencies of caller node
+    let callerNode'' = mapNodeDependencies (MultiSet.union usedByCallee . Map.delete callee) callerNode'
+    let usesBy' = Map.insert caller callerNode'' usesBy
+    -- update dependents of callee node's dependencies
+    let usesOf' = Map.foldlWithKey (\acc dep numberOfUses ->
+                    Map.adjust (\usesOfDep ->
+                        MultiSet.union (Map.singleton caller numberOfUses) $
+                          Map.delete callee usesOfDep
+                      ) dep acc
+                  ) usesOf usedByCallee
+
+    -- remove callee from maps
+
+    let usesBy'' = Map.adjust (mapNodeDependencies (const MultiSet.empty)) callee usesBy'
+    -- TODO we should probably be doing this instead but it's causing a problem with the artifacts
+    -- let usesBy'' = Map.delete callee usesBy'
+    let usesOf'' = Map.delete callee usesOf'
+
+    return (usesBy'', usesOf'', callerNode'')
 
 {- The global graph contains info of the form Map caller (Map callee Int). We
 refer to this as a usesBy map since usesBy[node] gives you a map of the
@@ -103,7 +126,7 @@ isSimpleExpr (Opt.If _ _) = False
 isSimpleExpr (Opt.Let _ _) = False
 isSimpleExpr (Opt.Destruct _ _) = False
 isSimpleExpr (Opt.Case _ _ _ _) = False
-isSimpleExpr (Opt.Accessor _) = True
+isSimpleExpr (Opt.Accessor _) = True -- TODO should we consider this simple?
 isSimpleExpr (Opt.Access _ _) = False
 isSimpleExpr (Opt.Update _ _) = False
 isSimpleExpr (Opt.Record _) = False
