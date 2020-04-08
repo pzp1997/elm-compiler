@@ -177,7 +177,10 @@ updateDeps :: Expr -> Map Global Int -> (Expr, Map Global Int)
 updateDeps expr deps = (expr', deps')
   where
     Edited (expr', b) = mapUntilFixpoint rewriteExpr expr
-    deps' = if b then MultiSet.toMap $ exprDeps expr' else deps
+    deps' = if b then
+      (MultiSet.toMap $ exprDeps expr')
+      -- <> MultiSet.filter (\(Global (ModuleName.Canonical pkg _) _) -> pkg == Pkg.json)
+      else deps
 
 -- TODO: Include Cycle
 rewriteNode :: Node -> Node
@@ -260,8 +263,7 @@ usedAsRoot var expr =
 betaReduce :: [Name] -> Expr -> [Expr] -> Expr
 betaReduce [] body [] = body
 betaReduce [] body args =
-  -- Should never happen in well-typed formula
-  Call (Function [] body) args
+  error "function called with two many arguments"
 betaReduce argNames body [] = Function argNames body
 betaReduce (argName : argNames) body (arg : args) =
   Let (Def argName arg) (betaReduce argNames body args)
