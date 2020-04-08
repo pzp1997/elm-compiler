@@ -57,11 +57,15 @@ toSet (MultiSet s) =
 fold :: Ord b => (a -> b -> a) -> a -> MultiSet b -> a
 fold f base (MultiSet s) = Map.foldlWithKey (\acc key _ -> f acc key) base s
 
+filter :: Ord a => (a -> Bool) -> MultiSet a -> MultiSet a
+filter f (MultiSet s) = MultiSet $ Map.filterWithKey (\k _ -> f k) s
+
 foldlWithKey :: (a -> k -> Int -> a) -> a -> MultiSet k -> a
 foldlWithKey f base (MultiSet s) = Map.foldlWithKey f base s
 
 foldrWithKey :: (k -> Int -> b -> b) -> b -> MultiSet k -> b
 foldrWithKey f base (MultiSet s) = Map.foldrWithKey f base s
+
 
 instance Ord a => Semigroup (MultiSet a) where
   (<>) = union

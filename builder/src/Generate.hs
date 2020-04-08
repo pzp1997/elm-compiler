@@ -69,13 +69,7 @@ dev root details (Build.Artifacts pkg _ roots modules) =
       let mode = Mode.Dev Nothing
       let graph = objectsToGlobalGraph objects
       let mains = gatherMains pkg objects roots
-      -- return $ JS.generate mode graph mains
-      -- let graph' = Simpl.simplify graph
-      return $ unsafePerformIO $ ( do
-                                     -- putStrLn $ diffGraphs graph graph'
-                                     -- putStrLn $ show graph
-                                     return $ JS.generate mode graph mains
-                                 )
+      return $ JS.generate mode graph mains
 
 
 prod :: FilePath -> Details.Details -> Build.Artifacts -> Task B.Builder
@@ -104,6 +98,7 @@ prod' (SimplifyOptions opt dump dumpOrig) root details (Build.Artifacts pkg _ ro
       return $ unsafePerformIO $ do
         if dumpOrig then putStrLn $ show graph else return ()
         if dump then putStrLn $ show graph' else return ()
+        if opt then putStrLn "Generating simplified code" else return ()
         return $ JS.generate mode (if opt then graph' else graph) mains
 
 repl :: FilePath -> Details.Details -> Bool -> Build.ReplArtifacts -> N.Name -> Task B.Builder
