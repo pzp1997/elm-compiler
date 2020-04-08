@@ -193,10 +193,9 @@ Executable elm
         Reporting.Suggest
         Reporting.Warning
         Simplify
-        -- Simplify.Expression
-        -- Simplify.Module
         Simplify.Inlining
         Simplify.RewriteRules
+        Simplify.SimpleRule
         Simplify.Utils
         Type.Constrain.Expression
         Type.Constrain.Module

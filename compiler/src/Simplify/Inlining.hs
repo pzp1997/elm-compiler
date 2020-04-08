@@ -23,11 +23,11 @@ inline :: Opt.GlobalGraph -> Opt.GlobalGraph
 inline (Opt.GlobalGraph graph fields) =
   -- Debug.trace (showMap graph) $
   let usesOf = invertUses graph in
-  Debug.trace (showMap usesOf) $
-  let (graph', _) = Map.foldrWithKey aux (Map.empty, usesOf) graph in
+  -- Debug.trace (showMap usesOf) $
+  let (graph', _) = Map.foldlWithKey aux (Map.empty, usesOf) graph in
   Opt.GlobalGraph graph' fields
   where
-    aux caller node (usesBy, usesOf) =
+    aux (usesBy, usesOf) caller node =
       let usesByNode = MultiSet.toSet (defsUsedByNode node) in
       let (usesBy', usesOf', node') = Set.foldr (inlineHelp caller) (usesBy, usesOf, node) usesByNode in
       (Map.insert caller node' usesBy', usesOf')
@@ -44,14 +44,13 @@ inlineHelp caller callee acc@(usesBy, usesOf, callerNode) =
     -- inline callee in caller node
     let callerNode' = mapNode (mapGlobalVarInExpr callee replacement) callerNode
     -- update dependencies of caller node
-    let callerNode'' = mapNodeDependencies (MultiSet.union usedByCallee . Map.delete callee) callerNode'
+    let callerNode'' = mapNodeDependencies (MultiSet.union usedByCallee . MultiSet.removeAll callee) callerNode'
     let usesBy' = Map.insert caller callerNode'' usesBy
     -- update dependents of callee node's dependencies
-    let usesOf' = Map.foldlWithKey (\acc dep numberOfUses ->
-                    Map.adjust (\usesOfDep ->
-                        MultiSet.union (Map.singleton caller numberOfUses) $
-                          Map.delete callee usesOfDep
-                      ) dep acc
+    let usesOf' = MultiSet.foldlWithKey (\acc dep numberOfUses ->
+                    Map.adjust
+                      (MultiSet.insertMany caller numberOfUses . MultiSet.removeAll callee)
+                      dep acc
                   ) usesOf usedByCallee
 
     -- remove callee from maps
@@ -77,10 +76,10 @@ invertUses usesBy =
   let usesOf = Map.map (const MultiSet.empty) usesBy in
   Map.foldrWithKey (\caller node usesOf ->
     let usesByCaller = defsUsedByNode node in
-    Map.foldrWithKey (\callee numberOfUses usesOf ->
+    MultiSet.foldrWithKey (\callee numberOfUses usesOf ->
       Map.alter (Just . \maybeUsesOfCallee ->
-        let usesOfCallee = Maybe.fromMaybe Map.empty maybeUsesOfCallee in
-        Map.insert caller numberOfUses usesOfCallee
+        let usesOfCallee = Maybe.fromMaybe MultiSet.empty maybeUsesOfCallee in
+        MultiSet.insertMany caller numberOfUses usesOfCallee
       ) callee usesOf
     ) usesOf usesByCaller
   ) usesOf usesBy

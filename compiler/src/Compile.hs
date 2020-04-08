@@ -26,7 +26,7 @@ import qualified Type.Solve as Type
 
 import System.IO.Unsafe (unsafePerformIO)
 
-
+-- import Simplify.RewriteRules (rewrite')
 
 -- COMPILE
 

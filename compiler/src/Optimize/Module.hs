@@ -18,6 +18,8 @@ import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified AST.Utils.Type as Type
 import qualified Canonicalize.Effects as Effects
+import qualified Data.MultiSet as MultiSet
+import Data.MultiSet (MultiSet)
 import qualified Elm.ModuleName as ModuleName
 import qualified Optimize.Expression as Expr
 import qualified Optimize.Names as Names
@@ -98,7 +100,7 @@ addAlias home name (Can.Alias _ tipe) graph@(Opt.LocalGraph main nodes fieldCoun
             Map.mapWithKey (\field _ -> Opt.VarLocal field) fields
 
         node =
-          Opt.Define function Map.empty
+          Opt.Define function MultiSet.empty
       in
       Opt.LocalGraph
         main
@@ -245,7 +247,7 @@ addDef home annotations def graph =
 addDefHelp :: A.Region -> Annotations -> ModuleName.Canonical -> Name.Name -> [Can.Pattern] -> Can.Expr -> Opt.LocalGraph -> Result i w Opt.LocalGraph
 addDefHelp region annotations home name args body graph@(Opt.LocalGraph _ nodes fieldCounts) =
   if name /= Name._main then
-    Result.ok (addDefNode home name args body Map.empty graph)
+    Result.ok (addDefNode home name args body MultiSet.empty graph)
   else
     let
       (Can.Forall _ tipe) = annotations ! name
@@ -272,7 +274,7 @@ addDefHelp region annotations home name args body graph@(Opt.LocalGraph _ nodes 
           Result.throw (E.BadType region tipe)
 
 
-addDefNode :: ModuleName.Canonical -> Name.Name -> [Can.Pattern] -> Can.Expr -> Map.Map Opt.Global Int -> Opt.LocalGraph -> Opt.LocalGraph
+addDefNode :: ModuleName.Canonical -> Name.Name -> [Can.Pattern] -> Can.Expr -> MultiSet Opt.Global -> Opt.LocalGraph -> Opt.LocalGraph
 addDefNode home name args body mainDeps graph =
   let
     (deps, fields, def) =
@@ -287,7 +289,7 @@ addDefNode home name args body mainDeps graph =
                 pure $ Opt.Function argNames $
                   foldr Opt.Destruct obody destructors
   in
-  addToGraph (Opt.Global home name) (Opt.Define def (Map.unionWith (+) deps mainDeps)) fields graph
+  addToGraph (Opt.Global home name) (Opt.Define def (MultiSet.union deps mainDeps)) fields graph
 
 
 

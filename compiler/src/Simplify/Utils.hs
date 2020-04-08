@@ -2,14 +2,20 @@ module Simplify.Utils where
 
 import AST.Display ()
 
-import qualified AST.Optimized as Opt
 import Control.Arrow (second)
 import qualified Data.List as List
-import qualified Data.Name as Name
 import qualified Data.Map as Map
 import qualified Data.MultiSet as MultiSet
 import Data.MultiSet (MultiSet)
 import qualified Data.Set as Set
+import Data.Maybe (fromMaybe)
+
+import qualified AST.Optimized as Opt
+import Data.Name (Name)
+import qualified Data.Name as Name
+import Data.MultiSet (MultiSet)
+import qualified Data.MultiSet as MultiSet
+import qualified Elm.ModuleName as ModuleName
 
 {- GETTERS -}
 
@@ -21,16 +27,109 @@ nodeExpr (Opt.PortIncoming e _) = Just e
 nodeExpr (Opt.PortOutgoing e _) = Just e
 nodeExpr _ = Nothing
 
+-- TODO: Should this include Ports?
 defsUsedByNode :: Opt.Node -> MultiSet Opt.Global
 defsUsedByNode (Opt.Define _ ds) = ds
 defsUsedByNode (Opt.DefineTailFunc _ _ ds) = ds
 defsUsedByNode (Opt.Cycle _ _ _ ds) = ds
 defsUsedByNode _ = MultiSet.empty
 
-nodeNames :: Opt.Node -> [Name.Name]
-nodeNames (Opt.DefineTailFunc names _ _) = names
-nodeNames (Opt.Cycle names _ _ _) = names
-nodeNames _ = []
+-- TODO: Missing some json functions for main?
+exprDeps :: Opt.Expr -> MultiSet Opt.Global
+exprDeps (Opt.Bool b) =
+  MultiSet.singleton (Opt.Global ModuleName.basics $ Name.fromChars $
+                      if b then "True" else "False")
+exprDeps (Opt.Chr _) = MultiSet.singleton (Opt.toKernelGlobal Name.utils)
+exprDeps (Opt.VarGlobal g) = MultiSet.singleton g
+exprDeps (Opt.VarEnum g _) = MultiSet.singleton g
+exprDeps (Opt.VarBox g) =
+  MultiSet.singleton (Opt.Global ModuleName.basics Name.identity) <>
+  MultiSet.singleton g
+exprDeps (Opt.VarKernel home _) =
+  MultiSet.singleton (Opt.toKernelGlobal home)
+exprDeps (Opt.List entries) =
+  MultiSet.singleton (Opt.toKernelGlobal Name.list) <>
+  (MultiSet.unions $ map exprDeps entries)
+exprDeps (Opt.Function _ body) = exprDeps body
+exprDeps (Opt.Call func args) =
+  exprDeps func `MultiSet.union`
+  (MultiSet.unions $ map exprDeps args)
+exprDeps (Opt.TailCall _ args) =
+  MultiSet.unions $ map (exprDeps . snd) args
+exprDeps (Opt.If branches final) =
+  exprDeps final `MultiSet.union`
+  (MultiSet.unions $ map (\(cond, body) ->
+                           exprDeps cond `MultiSet.union` exprDeps body
+                        ) branches)
+exprDeps (Opt.Let def body) =
+  exprDeps body <>
+  (case def of
+     Opt.Def _ e -> exprDeps e
+     Opt.TailDef _ _ e -> exprDeps e)
+exprDeps (Opt.Destruct _ body) = exprDeps body
+exprDeps (Opt.Case _ _ decider jumps) =
+  deciderDeps decider <> (MultiSet.unions $ map (exprDeps . snd) jumps)
+  where
+    deciderDeps :: Opt.Decider Opt.Choice -> MultiSet.MultiSet Opt.Global
+    deciderDeps (Opt.Leaf (Opt.Inline e)) = exprDeps e
+    deciderDeps (Opt.Leaf (Opt.Jump _)) = MultiSet.empty
+    deciderDeps (Opt.Chain { Opt._success=s , Opt._failure=f , Opt._testChain=_ }) =
+      deciderDeps s <> deciderDeps f
+    deciderDeps (Opt.FanOut { Opt._tests=t , Opt._fallback=f , Opt._path=_ }) =
+      deciderDeps f <> (MultiSet.unions $ map (deciderDeps . snd) t)
+exprDeps (Opt.Access record _) = exprDeps record
+exprDeps (Opt.Update e record) =
+  exprDeps e <>
+  (MultiSet.unions $ map exprDeps $ Map.elems record)
+exprDeps (Opt.Record record) =
+  MultiSet.unions $ map exprDeps $ Map.elems record
+exprDeps (Opt.Unit) =
+  MultiSet.singleton (Opt.toKernelGlobal Name.utils)
+exprDeps (Opt.Tuple e1 e2 me3) =
+  MultiSet.singleton (Opt.toKernelGlobal Name.utils) <>
+  exprDeps e1 <> exprDeps e2 <> maybe MultiSet.empty exprDeps me3
+exprDeps _ = MultiSet.empty
+
+countUses :: Opt.Expr -> MultiSet Name
+countUses (Opt.VarLocal n) = MultiSet.singleton n
+countUses (Opt.List exprs) = MultiSet.unions $ map countUses exprs
+countUses (Opt.Function argNames body) = countUses body
+countUses (Opt.Call func args) =
+  countUses func <> (MultiSet.unions $ map countUses args)
+countUses (Opt.TailCall n es) =
+  MultiSet.unions $ map (countUses . snd) es
+countUses (Opt.If branches final) =
+  countUses final <>
+  (MultiSet.unions $ map (countUses . fst) branches) <>
+  (MultiSet.unions $ map (countUses . snd) branches)
+countUses (Opt.Let (Opt.Def _ expr) body) = countUses expr <> countUses body
+countUses (Opt.Let (Opt.TailDef _ _ expr) body) = countUses expr <> countUses body
+countUses (Opt.Destruct (Opt.Destructor _ path) expr) =
+  MultiSet.singleton (rootOfPath path) <> countUses expr
+countUses (Opt.Case _ _ decider choices) =
+  deciderUses decider <> (MultiSet.unions $ map (countUses . snd) choices)
+  where
+    deciderUses :: Opt.Decider Opt.Choice -> MultiSet.MultiSet Name
+    deciderUses (Opt.Leaf (Opt.Inline e)) = countUses e
+    deciderUses (Opt.Leaf (Opt.Jump _)) = MultiSet.empty
+    deciderUses (Opt.Chain { Opt._success=s , Opt._failure=f , Opt._testChain=_ }) =
+      deciderUses s <> deciderUses f
+    deciderUses (Opt.FanOut { Opt._tests=t , Opt._fallback=f , Opt._path=_ }) =
+      deciderUses f <> (MultiSet.unions $ map (deciderUses . snd) t)
+countUses (Opt.Access e _) = countUses e
+countUses (Opt.Update e record) =
+  countUses e <> (MultiSet.unions $ map countUses $ Map.elems record)
+countUses (Opt.Record record) =
+  (MultiSet.unions $ map countUses $ Map.elems record)
+countUses (Opt.Tuple e1 e2 me3) =
+  countUses e1 <> countUses e2 <> fromMaybe MultiSet.empty (countUses <$> me3)
+countUses _ = MultiSet.empty
+
+rootOfPath :: Opt.Path -> Name
+rootOfPath (Opt.Index _ path) = rootOfPath path
+rootOfPath (Opt.Field _ path) = rootOfPath path
+rootOfPath (Opt.Unbox path) = rootOfPath path
+rootOfPath (Opt.Root var) = var
 
 {- MAPPING -}
 

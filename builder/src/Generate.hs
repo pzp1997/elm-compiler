@@ -3,6 +3,8 @@ module Generate
   ( debug
   , dev
   , prod
+  , prod'
+  , SimplifyOptions (..)
   , repl
   )
   where
@@ -34,6 +36,8 @@ import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
 
+import System.IO.Unsafe (unsafePerformIO)
+import AST.Display
 
 -- NOTE: This is used by Make, Repl, and Reactor right now. But it may be
 -- desireable to have Repl and Reactor to keep foreign objects in memory
@@ -65,7 +69,13 @@ dev root details (Build.Artifacts pkg _ roots modules) =
       let mode = Mode.Dev Nothing
       let graph = objectsToGlobalGraph objects
       let mains = gatherMains pkg objects roots
-      return $ JS.generate mode graph mains
+      -- return $ JS.generate mode graph mains
+      -- let graph' = Simpl.simplify graph
+      return $ unsafePerformIO $ ( do
+                                     -- putStrLn $ diffGraphs graph graph'
+                                     -- putStrLn $ show graph
+                                     return $ JS.generate mode graph mains
+                                 )
 
 
 prod :: FilePath -> Details.Details -> Build.Artifacts -> Task B.Builder
@@ -75,8 +85,26 @@ prod root details (Build.Artifacts pkg _ roots modules) =
       let graph = objectsToGlobalGraph objects
       let mode = Mode.Prod (Mode.shortenFieldNames graph)
       let mains = gatherMains pkg objects roots
-      return $ JS.generate mode (Simpl.simplify graph) mains
+      return $ JS.generate mode graph mains
 
+data SimplifyOptions = SimplifyOptions
+  { opt :: Bool
+  , dump :: Bool
+  , dumpOrig :: Bool
+  }
+
+prod' :: SimplifyOptions -> FilePath -> Details.Details -> Build.Artifacts -> Task B.Builder
+prod' (SimplifyOptions opt dump dumpOrig) root details (Build.Artifacts pkg _ roots modules) =
+  do  objects <- finalizeObjects =<< loadObjects root details modules
+      checkForDebugUses objects
+      let graph = objectsToGlobalGraph objects
+      let graph' = Simpl.simplify graph
+      let mode = Mode.Prod (Mode.shortenFieldNames graph')
+      let mains = gatherMains pkg objects roots
+      return $ unsafePerformIO $ do
+        if dumpOrig then putStrLn $ show graph else return ()
+        if dump then putStrLn $ show graph' else return ()
+        return $ JS.generate mode (if opt then graph' else graph) mains
 
 repl :: FilePath -> Details.Details -> Bool -> Build.ReplArtifacts -> N.Name -> Task B.Builder
 repl root details ansi (Build.ReplArtifacts home modules localizer annotations) name =

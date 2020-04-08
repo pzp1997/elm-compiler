@@ -20,6 +20,7 @@ import qualified Data.Utf8 as Utf8
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified Data.Index as Index
+import qualified Data.MultiSet as MultiSet
 import qualified Elm.Kernel as K
 import qualified Elm.ModuleName as ModuleName
 import qualified Generate.JavaScript.Builder as JS
@@ -187,7 +188,7 @@ addGlobalHelp :: Mode.Mode -> Graph -> Opt.Global -> State -> State
 addGlobalHelp mode graph global state =
   let
     addDeps deps someState =
-      Set.foldl' (addGlobal mode graph) someState (Map.keysSet (Map.filter (> 0) deps))
+      Set.foldl' (addGlobal mode graph) someState (MultiSet.toSet deps)
   in
   case graph ! global of
     Opt.Define expr deps ->
