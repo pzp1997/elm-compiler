@@ -23,8 +23,8 @@ nodeExpr :: Opt.Node -> Maybe Opt.Expr
 nodeExpr (Opt.Define e _) = Just e
 nodeExpr (Opt.DefineTailFunc _ e _) = Just e
 -- nodeExpr (Opt.Cycle _ _ defs _) = Just
-nodeExpr (Opt.PortIncoming e _) = Just e
-nodeExpr (Opt.PortOutgoing e _) = Just e
+-- nodeExpr (Opt.PortIncoming e _) = Just e
+-- nodeExpr (Opt.PortOutgoing e _) = Just e
 nodeExpr _ = Nothing
 
 -- TODO: Should this include Ports?
@@ -32,6 +32,9 @@ defsUsedByNode :: Opt.Node -> MultiSet Opt.Global
 defsUsedByNode (Opt.Define _ ds) = ds
 defsUsedByNode (Opt.DefineTailFunc _ _ ds) = ds
 defsUsedByNode (Opt.Cycle _ _ _ ds) = ds
+defsUsedByNode (Opt.Kernel _ ds) = ds
+defsUsedByNode (Opt.PortIncoming _ ds) = ds
+defsUsedByNode (Opt.PortOutgoing _ ds) = ds
 defsUsedByNode _ = MultiSet.empty
 
 -- TODO: Missing some json functions for main?

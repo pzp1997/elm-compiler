@@ -32,19 +32,26 @@ inline (Opt.GlobalGraph graph fields) =
       let (usesBy', usesOf', node') = Set.foldr (inlineHelp caller) (usesBy, usesOf, node) usesByNode in
       (Map.insert caller node' usesBy', usesOf')
 
+-- TODO we need to inline simpleExpr separately since they inline the callee into all callers which is not what inlineHelp does
+-- isSimpleExpr replacement ||
+
 inlineHelp :: Opt.Global -> Opt.Global -> (Map.Map Opt.Global Opt.Node, Map.Map Opt.Global (MultiSet Opt.Global), Opt.Node) -> (Map.Map Opt.Global Opt.Node, Map.Map Opt.Global (MultiSet Opt.Global), Opt.Node)
 inlineHelp caller callee acc@(usesBy, usesOf, callerNode) =
-  if isBasicsFunction callee then acc
+  if isBasicsFunction callee then
+    -- Basics functions already get optimized during code generation
+    acc
   else Maybe.fromMaybe acc $ do
     calleeNode <- Map.lookup callee usesBy
     replacement <- nodeExpr calleeNode
     usesOfCallee <- Map.lookup callee usesOf
-    guard (isSimpleExpr replacement || usesOfCallee == MultiSet.singleton caller)
+    guard (usesOfCallee == MultiSet.singleton caller)
     let usedByCallee = defsUsedByNode calleeNode
     -- inline callee in caller node
     let callerNode' = mapNode (mapGlobalVarInExpr callee replacement) callerNode
     -- update dependencies of caller node
-    let callerNode'' = mapNodeDependencies (MultiSet.union usedByCallee . MultiSet.removeAll callee) callerNode'
+    let callerNode'' = mapNodeDependencies
+                        (MultiSet.union usedByCallee . MultiSet.removeAll callee)
+                        callerNode'
     let usesBy' = Map.insert caller callerNode'' usesBy
     -- update dependents of callee node's dependencies
     let usesOf' = MultiSet.foldlWithKey (\acc dep numberOfUses ->
@@ -54,7 +61,6 @@ inlineHelp caller callee acc@(usesBy, usesOf, callerNode) =
                   ) usesOf usedByCallee
 
     -- remove callee from maps
-
     let usesBy'' = Map.adjust (mapNodeDependencies (const MultiSet.empty)) callee usesBy'
     -- TODO we should probably be doing this instead but it's causing a problem with the artifacts
     -- let usesBy'' = Map.delete callee usesBy'
