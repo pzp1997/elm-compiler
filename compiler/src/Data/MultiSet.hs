@@ -24,7 +24,10 @@ insertMany :: Ord a => a -> Int -> MultiSet a -> MultiSet a
 insertMany x n (MultiSet m) = MultiSet $ Map.insertWith (+) x n m
 
 removeOne :: Ord a => a -> MultiSet a -> MultiSet a
-removeOne x (MultiSet m) = MultiSet $ Map.adjust (\n -> n - 1) x m
+removeOne x m = removeMany x 1 m
+
+removeMany :: Ord a => a -> Int -> MultiSet a -> MultiSet a
+removeMany x n' (MultiSet m) = MultiSet $ Map.adjust (\n -> n - n') x m
 
 removeAll :: Ord a => a -> MultiSet a -> MultiSet a
 removeAll x (MultiSet m) = MultiSet $ Map.delete x m
