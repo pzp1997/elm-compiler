@@ -92,9 +92,9 @@ prod' (SimplifyOptions opt dump dumpOrig) root details (Build.Artifacts pkg _ ro
   do  objects <- finalizeObjects =<< loadObjects root details modules
       checkForDebugUses objects
       let graph = objectsToGlobalGraph objects
-      let graph' = Simpl.simplify graph
-      let mode = Mode.Prod (Mode.shortenFieldNames graph')
       let mains = gatherMains pkg objects roots
+      let graph' = Simpl.simplify mains graph
+      let mode = Mode.Prod (Mode.shortenFieldNames graph')
       return $ unsafePerformIO $ do
         if dumpOrig then putStrLn $ show graph else return ()
         if dump then putStrLn $ show graph' else return ()
