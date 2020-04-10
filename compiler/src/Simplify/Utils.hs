@@ -37,7 +37,7 @@ defsUsedByNode (Opt.PortIncoming _ ds) = ds
 defsUsedByNode (Opt.PortOutgoing _ ds) = ds
 defsUsedByNode _ = MultiSet.empty
 
--- TODO: Missing some json functions for main? Rewrite with foldExpr?
+-- TODO: Missing some json functions for main? Rewrite with foldExpr and <>?
 exprDeps :: Opt.Expr -> MultiSet Opt.Global
 exprDeps (Opt.Bool b) =
   MultiSet.singleton (Opt.Global ModuleName.basics $ Name.fromChars $
