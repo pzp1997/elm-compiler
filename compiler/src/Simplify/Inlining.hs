@@ -31,7 +31,7 @@ inline usesOf (Opt.GlobalGraph graph fields) =
       (Map.insert caller node' usesBy', usesOf')
 
 inlineHelp :: Opt.Global -> Opt.Global -> (Map.Map Opt.Global Opt.Node, Map.Map Opt.Global (MultiSet Opt.Global), Opt.Node) -> (Map.Map Opt.Global Opt.Node, Map.Map Opt.Global (MultiSet Opt.Global), Opt.Node)
-inlineHelp caller callee acc@(usesBy, usesOf, callerNode) =
+inlineHelp caller callee@(Opt.Global calleeModuleName _) acc@(usesBy, usesOf, callerNode) =
   if isBasicsFunction callee then
     -- Basics functions already get optimized during code generation
     acc
@@ -44,7 +44,8 @@ inlineHelp caller callee acc@(usesBy, usesOf, callerNode) =
     ; -- if the thing I am using (i.e. the callee) is only used in my body
       -- (i.e. the caller), substitute its definition in my body
       let calleeOnlyUsedOnce = usesOfCallee == MultiSet.singleton caller
-    ; guard (calleeIsSimple || calleeOnlyUsedOnce)
+    ; let fromJsonDecodeModule = calleeModuleName == ModuleName.jsonDecode
+    ; guard ((calleeIsSimple || calleeOnlyUsedOnce) && not fromJsonDecodeModule)
     ; let usedByCallee = defsUsedByNode calleeNode
     ; -- inline callee in caller node
       let callerNode' = mapNode (mapGlobalVarInExpr callee replacement) callerNode
