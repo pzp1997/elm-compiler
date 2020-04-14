@@ -17,6 +17,27 @@ import Data.MultiSet (MultiSet)
 import qualified Data.MultiSet as MultiSet
 import qualified Elm.ModuleName as ModuleName
 
+newtype Edited a = Edited (a, Bool)
+
+instance Functor Edited where
+  fmap f (Edited (x, b)) = (Edited (f x, b))
+
+instance Applicative Edited where
+  pure x = Edited (x, False)
+  (<*>) (Edited (f, b)) (Edited (x, b')) =
+    Edited (f x, b || b')
+
+instance Monad Edited where
+  return x = Edited (x, False)
+  (>>=) (Edited (x, b)) f = Edited (x', b || b')
+    where (Edited (x', b')) = f x
+
+liftEdit :: (a -> Maybe a) -> (a -> Edited a)
+liftEdit f x =
+  case f x of
+    Just x' -> Edited (x', True)
+    Nothing -> Edited (x, False)
+
 {- GETTERS -}
 
 nodeExpr :: Opt.Node -> Maybe Opt.Expr

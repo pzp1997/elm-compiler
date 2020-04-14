@@ -46,31 +46,6 @@ recomputeDeps (PortOutgoing encoder deps) =
   PortOutgoing encoder (exprDeps encoder)
 recomputeDeps x = x
 
-
--- MONADS
-
-
-newtype Edited a = Edited (a, Bool)
-
-instance Applicative Edited where
-  pure x = Edited (x, False)
-  (<*>) (Edited (f, b)) (Edited (x, b')) =
-    Edited (f x, b || b')
-
-instance Functor Edited where
-  fmap f (Edited (x, b)) = (Edited (f x, b))
-
-instance Monad Edited where
-  return x = Edited (x, False)
-  (>>=) (Edited (x, b)) f = Edited (x', b || b')
-    where (Edited (x', b')) = f x
-
-liftEdit :: (a -> Maybe a) -> (a -> Edited a)
-liftEdit f x =
-  case f x of
-    Just x' -> Edited (x', True)
-    Nothing -> Edited (x, False)
-
 mapExprM :: Monad m => (Expr -> m Expr) -> Expr -> m Expr
 mapExprM f expr =
   let f' = mapExprM f in
