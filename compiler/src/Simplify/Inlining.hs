@@ -3,6 +3,7 @@ module Simplify.Inlining (inline, invertUses) where
 import qualified Debug.Trace as Debug
 
 import qualified AST.Optimized as Opt
+import Control.Arrow (second)
 import Control.Monad (guard)
 import qualified Data.List as List
 import qualified Data.Map as Map
@@ -20,58 +21,58 @@ import Simplify.Utils
 
 -- usesBy :: Map Global Node ~ Map Global Expr + Map Global (MultiSet Global)
 -- some Node contain Set Globals
-inline :: Map.Map Opt.Global (MultiSet Opt.Global) -> Opt.GlobalGraph -> Opt.GlobalGraph
+inline :: Map.Map Opt.Global (MultiSet Opt.Global) -> Opt.GlobalGraph -> Edited ( Map.Map Opt.Global (MultiSet Opt.Global), Opt.GlobalGraph )
 inline usesOf (Opt.GlobalGraph graph fields) =
-  let (graph', _) = Map.foldlWithKey aux (Map.empty, usesOf) graph in
-  Opt.GlobalGraph graph' fields
+  fmap (second (flip Opt.GlobalGraph fields)) $
+    Map.foldlWithKey aux (pure (usesOf, Map.empty)) graph
   where
-    aux (usesBy, usesOf) caller node =
+    aux acc caller node =
       let usesByNode = MultiSet.toSet (defsUsedByNode node) in
-      let (usesBy', usesOf', node') = Set.foldr (inlineHelp caller) (usesBy, usesOf, node) usesByNode in
-      (Map.insert caller node' usesBy', usesOf')
+      (\(usesBy', usesOf', node') -> (usesOf', Map.insert caller node' usesBy')) <$>
+        Set.foldr (\callee acc -> acc >>= liftEdit (inlineHelp caller callee)) ((\(usesOf, usesBy) -> (usesBy, usesOf, node)) <$> acc) usesByNode
 
-inlineHelp :: Opt.Global -> Opt.Global -> (Map.Map Opt.Global Opt.Node, Map.Map Opt.Global (MultiSet Opt.Global), Opt.Node) -> (Map.Map Opt.Global Opt.Node, Map.Map Opt.Global (MultiSet Opt.Global), Opt.Node)
-inlineHelp caller callee acc@(usesBy, usesOf, callerNode) =
-  if isBasicsFunction callee then
-    -- Basics functions already get optimized during code generation
-    acc
-  else Maybe.fromMaybe acc $ do
-    { calleeNode <- Map.lookup callee usesBy
-    ; replacement <- nodeExpr calleeNode
-    ; usesOfCallee <- Map.lookup callee usesOf
-    ; -- anyone who is using me should use my definition instead (since it is simple)
-      let calleeIsSimple = isSimpleExpr replacement
-    ; -- if the thing I am using (i.e. the callee) is only used in my body
-      -- (i.e. the caller), substitute its definition in my body
-      let calleeOnlyUsedOnce = usesOfCallee == MultiSet.singleton caller
-    ; guard (calleeIsSimple || calleeOnlyUsedOnce)
-    ; let usedByCallee = defsUsedByNode calleeNode
-    ; -- inline callee in caller node
-      let callerNode' = mapNode (mapGlobalVarInExpr callee replacement) callerNode
-    ; -- update dependencies of caller node
-      let callerNode'' = mapNodeDependencies
-                          (MultiSet.union usedByCallee . MultiSet.removeAll callee)
-                          callerNode'
-    ; let usesBy' = Map.insert caller callerNode'' usesBy
-    ; -- update dependents of callee node's dependencies
-      let usesOf' = MultiSet.foldlWithKey
-                      (\acc dep numberOfUses ->
-                        Map.adjust
-                          (MultiSet.insertMany caller numberOfUses
-                            . MultiSet.removeMany callee numberOfUses)
-                          dep acc
-                      ) usesOf usedByCallee
-    ; if calleeIsSimple then
-        Just (usesBy', usesOf', callerNode'')
-      else if calleeOnlyUsedOnce then
-        -- remove callee from maps
-        let usesBy'' = Map.adjust (mapNodeDependencies (const MultiSet.empty)) callee usesBy' in
-        -- TODO we should probably be doing this instead but it's causing a problem with the artifacts
-        -- let usesBy'' = Map.delete callee usesBy'
-        let usesOf'' = Map.delete callee usesOf' in
-        Just (usesBy'', usesOf'', callerNode'')
-      else Nothing
-    }
+
+inlineHelp :: Opt.Global -> Opt.Global -> (Map.Map Opt.Global Opt.Node, Map.Map Opt.Global (MultiSet Opt.Global), Opt.Node) -> Maybe (Map.Map Opt.Global Opt.Node, Map.Map Opt.Global (MultiSet Opt.Global), Opt.Node)
+inlineHelp caller callee@(Opt.Global calleeModuleName _) acc@(usesBy, usesOf, callerNode) = do
+  { -- Basics functions already get optimized during code generation
+    guard (not $ isBasicsFunction callee)
+  ; calleeNode <- Map.lookup callee usesBy
+  ; replacement <- nodeExpr calleeNode
+  ; usesOfCallee <- Map.lookup callee usesOf
+  ; -- anyone who is using me should use my definition instead (since it is simple)
+    let calleeIsSimple = isSimpleExpr replacement
+  ; -- if the thing I am using (i.e. the callee) is only used in my body
+    -- (i.e. the caller), substitute its definition in my body
+    let calleeOnlyUsedOnce = usesOfCallee == MultiSet.singleton caller
+  ; let fromJsonDecodeModule = calleeModuleName == ModuleName.jsonDecode
+  ; guard ((calleeIsSimple || calleeOnlyUsedOnce) && not fromJsonDecodeModule)
+  ; let usedByCallee = defsUsedByNode calleeNode
+  ; -- inline callee in caller node
+    let callerNode' = mapNode (mapGlobalVarInExpr callee replacement) callerNode
+  ; -- update dependencies of caller node
+    let callerNode'' = mapNodeDependencies
+                        (MultiSet.union usedByCallee . MultiSet.removeAll callee)
+                        callerNode'
+  ; let usesBy' = Map.insert caller callerNode'' usesBy
+  ; -- update dependents of callee node's dependencies
+    let usesOf' = MultiSet.foldlWithKey
+                    (\acc dep numberOfUses ->
+                      Map.adjust
+                        (MultiSet.insertMany caller numberOfUses
+                          . MultiSet.removeMany callee numberOfUses)
+                        dep acc
+                    ) usesOf usedByCallee
+  ; if calleeIsSimple then
+      Just (usesBy', usesOf', callerNode'')
+    else if calleeOnlyUsedOnce then
+      -- remove callee from maps
+      let usesBy'' = Map.adjust (mapNodeDependencies (const MultiSet.empty)) callee usesBy' in
+      -- TODO we should probably be doing this instead but it's causing a problem with the artifacts
+      -- let usesBy'' = Map.delete callee usesBy'
+      let usesOf'' = Map.delete callee usesOf' in
+      Just (usesBy'', usesOf'', callerNode'')
+    else Nothing
+  }
 
 {- The global graph contains info of the form Map caller (Map callee Int). We
 refer to this as a usesBy map since usesBy[node] gives you a map of the
