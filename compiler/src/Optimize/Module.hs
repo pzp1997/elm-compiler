@@ -41,7 +41,7 @@ type Result i w a =
 type Annotations =
   Map.Map Name.Name Can.Annotation
 
-
+-- What is inlineable?
 optimize :: Annotations -> Can.Module -> Result i [W.Warning] Opt.LocalGraph
 optimize annotations (Can.Module home _ _ decls unions aliases _ effects inlineable) =
   addDecls home annotations decls $

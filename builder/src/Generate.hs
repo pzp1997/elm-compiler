@@ -85,10 +85,12 @@ data SimplifyOptions = SimplifyOptions
   { opt :: Bool
   , dump :: Bool
   , dumpOrig :: Bool
+  , dumpMains :: Bool
   }
 
 prod' :: SimplifyOptions -> FilePath -> Details.Details -> Build.Artifacts -> Task B.Builder
-prod' (SimplifyOptions opt dump dumpOrig) root details (Build.Artifacts pkg _ roots modules) =
+prod' (SimplifyOptions opt dump dumpOrig dumpMains)
+  root details (Build.Artifacts pkg _ roots modules) =
   do  objects <- finalizeObjects =<< loadObjects root details modules
       checkForDebugUses objects
       let graph = objectsToGlobalGraph objects
@@ -98,6 +100,7 @@ prod' (SimplifyOptions opt dump dumpOrig) root details (Build.Artifacts pkg _ ro
       return $ unsafePerformIO $ do
         if dumpOrig then putStrLn $ show graph else return ()
         if dump then putStrLn $ show graph' else return ()
+        if dumpMains then putStrLn $ show mains else return ()
         if opt then putStrLn "Generating simplified code" else return ()
         return $ JS.generate mode (if opt then graph' else graph) mains
 

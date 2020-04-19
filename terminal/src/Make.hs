@@ -337,5 +337,6 @@ parseSimplify s =
   { Generate.opt = elem "opt" parsed
   , Generate.dump = elem "dump" parsed
   , Generate.dumpOrig = elem "dumporig" parsed
+  , Generate.dumpMains = elem "dumpmains" parsed
   }
   where parsed = words s
