@@ -1,5 +1,5 @@
 {-# LANGUAGE TupleSections, NamedFieldPuns #-}
-module Simplify.RewriteRules (rewrite, rewrite') where
+module Simplify.RewriteRules (rewrite) where
 
 import Data.Maybe (fromMaybe)
 import Control.Monad (mapM)
@@ -21,18 +21,15 @@ import Simplify.SimpleRule (SimpleRule (..), simpleRules)
 
 -- TOPLEVEL REWRITING
 
-rewrite :: GlobalGraph -> GlobalGraph
-rewrite g =
-  g { _g_nodes=nodes' }
-  where nodes' = Map.map rewriteNode $ _g_nodes g
+rewrite :: GlobalGraph -> Edited GlobalGraph
+rewrite g = do
+  nodes' <- mapFields rewriteNode $ _g_nodes g
+  return $ g { _g_nodes=nodes' }
 
-rewrite' :: LocalGraph -> LocalGraph
-rewrite' g =
-  g { _l_nodes=nodes' }
-  where nodes' = Map.map rewriteNode $ _l_nodes g
-
-
--- FOR TESTING
+-- rewrite' :: LocalGraph -> LocalGraph
+-- rewrite' g =
+--   g { _l_nodes=nodes' }
+--   where nodes' = Map.map rewriteNode $ _l_nodes g
 
 
 recomputeDeps :: Node -> Node
@@ -107,8 +104,7 @@ deciderHelper f (FanOut { _path, _tests, _fallback }) = do
   _tests <- mapM (\(t, d) -> (t, ) <$> deciderHelper f d) _tests
   return $ FanOut { _path, _tests, _fallback }
 
-mapFields :: Monad m => (Expr -> m Expr) ->
-             Map Name Expr -> m (Map Name Expr)
+mapFields :: (Monad m, Ord k) => (a -> m a) -> Map k a -> m (Map k a)
 mapFields f updates =
   Map.fromList <$>
   (mapM (\(k, a) -> (k, ) <$> f a) $
@@ -140,35 +136,28 @@ foldExpr f combine base e = foldr ($) base final
 -- REWRITE ENGINE
 
 
-editUntilFixpoint :: (a -> Edited a) -> a -> Edited a
-editUntilFixpoint f x =
-  let e@(Edited (x', b)) = f x
-  in if b then e >>= editUntilFixpoint f else Edited (x', False)
-
 mapUntilFixpoint :: (Expr -> Maybe Expr) -> Expr -> Edited Expr
 mapUntilFixpoint f = mapExprM $ editUntilFixpoint $ liftEdit f
 
-
-
-updateDeps :: Expr -> MultiSet Global -> (Expr, MultiSet Global)
-updateDeps expr deps = (expr', deps')
-  where
-    Edited (expr', b) = mapUntilFixpoint rewriteExpr expr
-    deps' = if b then
-      exprDeps expr'
-      <> MultiSet.filter (\(Global (ModuleName.Canonical pkg _) _) -> pkg == Pkg.json) deps
-      else deps
+updateDeps :: Expr -> MultiSet Global -> Edited (Expr, MultiSet Global)
+updateDeps expr deps =
+    let Edited (expr', b) = mapUntilFixpoint rewriteExpr expr
+    in Edited ((expr',
+            if b then
+              exprDeps expr'
+              <> MultiSet.filter (\(Global (ModuleName.Canonical pkg _) _) -> pkg == Pkg.json) deps
+            else deps), b)
 
 -- TODO: Include Ports
-rewriteNode :: Node -> Node
-rewriteNode (Define expr deps) =
-  Define expr' deps'
-  where (expr', deps') = updateDeps expr deps
-rewriteNode (DefineTailFunc argNames body deps) =
-  DefineTailFunc argNames body' deps'
-  where (body', deps') = updateDeps body deps
+rewriteNode :: Node -> Edited Node
+rewriteNode (Define expr deps) = do
+  (expr', deps') <- updateDeps expr deps
+  return $ Define expr' deps'
+rewriteNode (DefineTailFunc argNames body deps) = do
+  (body', deps') <- updateDeps body deps
+  return $ DefineTailFunc argNames body' deps'
 rewriteNode (Cycle names es defs deps) =
-  Cycle names es defs' deps'
+  Edited (Cycle names es defs' deps', b)
   where
     Edited (defs', b) = mapM (mapDefM $ mapUntilFixpoint rewriteExpr) defs
     deps' =
@@ -178,7 +167,7 @@ rewriteNode (Cycle names es defs deps) =
     mapDefM :: Monad m => (Expr -> m Expr) -> Def -> m Def
     mapDefM f (Def name expr) = Def name <$> f expr
     mapDefM f (TailDef name names expr) = TailDef name names <$> f expr
-rewriteNode x = x
+rewriteNode x = return x
 
 exprOfDep :: Def -> Expr
 exprOfDep (Def _ expr) = expr
@@ -189,13 +178,7 @@ exprOfDep (TailDef _ _ expr) = expr
 
 
 rewriteExpr :: Expr -> Maybe Expr
-rewriteExpr (Let (Def var expr) body) =
-  let numUses = countUses body MultiSet.! var
-  in if uninlineable var body then Nothing
-  else if numUses == 0 then Just body
-  else if numUses == 1 || isSmall expr then
-    Just $ subst var expr body
-  else Nothing
+rewriteExpr (Let (Def var expr) body) = attemptInline var expr body
 rewriteExpr (Destruct (Destructor var _) body) =
   let numUses = countUses body MultiSet.! var
   in if not (uninlineable var body) && numUses == 0
@@ -205,7 +188,7 @@ rewriteExpr (Call func args) =
   case func of
     (Function argNames body) ->
       if null argNames || null args then Nothing
-      else Just $ betaReduce argNames body args
+      else betaReduce argNames body args
     (VarGlobal funcName) ->
       foldl (\acc (SimpleRule funcName' rewrite) ->
                 if funcName == funcName' then
@@ -231,22 +214,18 @@ uninlineable var expr =
     aux :: Expr -> Bool
     aux (Destruct (Destructor _ path) _) | var == rootOfPath path = True
     aux (Case _ root _ _) | var == root = True
+    aux (Let (Def v _) _) | var == v = True
     aux _ = False
 
-betaReduce :: [Name] -> Expr -> [Expr] -> Expr
-betaReduce [] body [] = body
-betaReduce [] body args =
-  error "function called with two many arguments"
-betaReduce argNames body [] = Function argNames body
-betaReduce (argName : argNames) body (arg : args) =
-  Let (Def argName arg) (betaReduce argNames body args)
-
-shortcircuit :: [(Expr, Expr)] -> ([(Expr, Expr)], Maybe Expr)
-shortcircuit [] = ([], Nothing)
-shortcircuit (((Bool True), e) : tl) = ([], Just e)
-shortcircuit (((Bool False), e) : tl) = shortcircuit tl
-shortcircuit (branch : tl) = (branch : branches, final)
-  where (branches, final) = shortcircuit tl
+-- TODO: Sometimes misses rewriting oppurtunities at inline site
+attemptInline :: Name -> Expr -> Expr -> Maybe Expr
+attemptInline var expr body =
+  let numUses = countUses body MultiSet.! var
+  in if uninlineable var body then Nothing
+  else if numUses == 0 then Just body
+  else if numUses == 1 || isSmall expr then
+    Just $ subst var expr body
+  else Nothing
 
 subst :: Name -> Expr -> Expr -> Expr
 subst var expr = mapExpr replaceVar
@@ -254,6 +233,33 @@ subst var expr = mapExpr replaceVar
     replaceVar :: Expr -> Expr
     replaceVar (VarLocal var') | var == var' = expr
     replaceVar e = e
+
+-- This is fairly sensitive to changes since we need to avoid shadowing
+-- TODO: Rewrite this to be readable
+-- TODO: Try to break this; might still produce illegal shadowing
+betaReduce :: [Name] -> Expr -> [Expr] -> Maybe Expr
+betaReduce argNames body args =
+  let (argNames', args', body') = aux argNames args in
+    if length argNames' == 0 then Just body'
+    else if length argNames' == length argNames then Nothing
+    else Just $ Call (Function argNames' body') args'
+  where
+    aux :: [Name] -> [Expr] -> ([Name], [Expr], Expr)
+    aux [] [] = ([], [], body)
+    aux [] args = error "function called with too many arguments"
+    aux argNames [] = (argNames, [], body)
+    aux (argName : argNames_t) (arg : args_t) =
+      let (argNames', args', body') = aux argNames_t args_t
+      in case (attemptInline argName arg body') of
+        Nothing -> (argName : argNames', arg : args', body')
+        Just body'' -> (argNames', args', body'')
+
+shortcircuit :: [(Expr, Expr)] -> ([(Expr, Expr)], Maybe Expr)
+shortcircuit [] = ([], Nothing)
+shortcircuit (((Bool True), e) : tl) = ([], Just e)
+shortcircuit (((Bool False), e) : tl) = shortcircuit tl
+shortcircuit (branch : tl) = (branch : branches, final)
+  where (branches, final) = shortcircuit tl
 
 isSmall :: Expr -> Bool
 isSmall (Bool _) = True

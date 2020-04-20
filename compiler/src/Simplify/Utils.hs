@@ -38,6 +38,14 @@ liftEdit f x =
     Just x' -> Edited (x', True)
     Nothing -> Edited (x, False)
 
+editUntilFixpoint :: (a -> Edited a) -> a -> Edited a
+editUntilFixpoint f x =
+  let e@(Edited (x', b)) = f x
+  in if b then e >>= editUntilFixpoint f else Edited (x', False)
+
+fromEdit :: Edited a -> a
+fromEdit (Edited (x, _)) = x
+
 {- GETTERS -}
 
 nodeExpr :: Opt.Node -> Maybe Opt.Expr

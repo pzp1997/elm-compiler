@@ -1,4 +1,4 @@
-module Simplify.Inlining (inline, invertUses) where
+module Simplify.Inlining (inline, invertUses, buildUsesOf) where
 
 import qualified Debug.Trace as Debug
 
@@ -21,8 +21,9 @@ import Simplify.Utils
 
 -- usesBy :: Map Global Node ~ Map Global Expr + Map Global (MultiSet Global)
 -- some Node contain Set Globals
-inline :: Map.Map Opt.Global (MultiSet Opt.Global) -> Opt.GlobalGraph -> Edited ( Map.Map Opt.Global (MultiSet Opt.Global), Opt.GlobalGraph )
-inline usesOf (Opt.GlobalGraph graph fields) =
+inline :: Map.Map ModuleName.Canonical Opt.Main -> Opt.GlobalGraph -> Edited ( Map.Map Opt.Global (MultiSet Opt.Global), Opt.GlobalGraph )
+inline mains (Opt.GlobalGraph graph fields) =
+  let usesOf = buildUsesOf mains graph in
   fmap (second (flip Opt.GlobalGraph fields)) $
     Map.foldlWithKey aux (pure (usesOf, Map.empty)) graph
   where
@@ -95,6 +96,26 @@ invertUses usesBy =
       ) callee usesOf
     ) usesOf usesByCaller
   ) usesOf usesBy
+
+-- Used for mains
+buildUsesOf :: Map.Map ModuleName.Canonical Opt.Main -> Map.Map Opt.Global Opt.Node -> Map.Map Opt.Global (MultiSet.MultiSet Opt.Global)
+buildUsesOf mains usesBy =
+  Map.foldlWithKey'
+    (\acc moduleName main ->
+      case main of
+        Opt.Static -> acc
+        Opt.Dynamic _ decoder ->
+          let additionalUsesOf = exprDeps decoder in
+          MultiSet.foldlWithKey
+            (\acc name numberOfUses ->
+              Map.adjust
+                (MultiSet.insertMany
+                  (Opt.Global moduleName Name._main)
+                  numberOfUses
+                ) name acc
+            ) acc additionalUsesOf
+    ) (invertUses usesBy) mains
+
 
 basicsFunctions :: [Name.Name]
 basicsFunctions = Name.fromChars <$>
