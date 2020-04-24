@@ -1,3 +1,4 @@
+
 module Simplify.SimpleRule (SimpleRule(..), simpleRules) where
 
 import AST.Optimized
@@ -21,6 +22,14 @@ andBop = global Pkg.core "Basics" "and"
 mapFxn = global Pkg.core "List" "map"
 composeFxn = global Pkg.core "Basics" "composeL"
 apRFxn = global Pkg.core "Basics" "apR"
+foldlFxn = global Pkg.core "List" "foldl"
+foldrFxn = global Pkg.core "List" "foldr"
+addFxn = global Pkg.core "Basics" "add"
+subFxn = global Pkg.core "Basics" "sub"
+mulFxn = global Pkg.core "Basics" "mul"
+fdivFxn = global Pkg.core "Basics" "fdiv"
+idivFxn = global Pkg.core "Basics" "idiv"
+powFxn = global Pkg.core "Basics" "pow"
 
 reverseLiteral :: SimpleRule
 reverseLiteral = SimpleRule revFxn rewrite
@@ -59,5 +68,28 @@ pipeMap = SimpleRule apRFxn rewrite
       Just $ Call (VarGlobal mapFxn) [f, l]
     rewrite _ = Nothing
 
+-- Constant addition
+constantAdd = SimpleRule addFxn rewrite
+  where
+    rewrite [Int i, Int j] = Just $ Int (i + j)
+    rewrite _ = Nothing
 
-simpleRules = [reverseLiteral, applyAnd, pipeMap, mapComposition]
+-- Constant subtraction
+constantSub = SimpleRule subFxn rewrite
+  where
+    rewrite [Int i, Int j] = Just $ Int (i - j)
+    rewrite _ = Nothing
+
+-- Constant Multiplication
+constantMult = SimpleRule mulFxn rewrite
+  where
+    rewrite [Int i, Int j] = Just $ Int (i * j)
+    rewrite _ = Nothing
+
+-- Constant Integer Division
+constantIDiv = SimpleRule idivFxn rewrite
+  where
+    rewrite [Int i, Int j] = Just $ Int (i `div` j)
+    rewrite _ = Nothing
+
+simpleRules = [reverseLiteral, applyAnd, pipeMap, mapComposition, constantAdd, constantSub, constantMult, constantIDiv]
