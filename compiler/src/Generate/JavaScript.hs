@@ -2,6 +2,7 @@
 module Generate.JavaScript
   ( generate
   , generateForRepl
+  , generateForReplEndpoint
   )
   where
 
@@ -19,6 +20,7 @@ import qualified Data.Utf8 as Utf8
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified Data.Index as Index
+import qualified Data.MultiSet as MultiSet
 import qualified Elm.Kernel as K
 import qualified Elm.ModuleName as ModuleName
 import qualified Generate.JavaScript.Builder as JS
@@ -85,7 +87,8 @@ generateForRepl ansi localizer (Opt.GlobalGraph graph _) home name (Can.Forall _
     debugState = addGlobal mode graph emptyState (Opt.Global ModuleName.debug "toString")
     evalState = addGlobal mode graph debugState (Opt.Global home name)
   in
-  Functions.functions
+  "process.on('uncaughtException', function(err) { process.stderr.write(err.toString() + '\\n'); process.exit(1); });"
+  <> Functions.functions
   <> stateToBuilder evalState
   <> print ansi localizer home name tipe
 
@@ -98,14 +101,47 @@ print ansi localizer home name tipe =
     tipeDoc = RT.canToDoc localizer RT.None tipe
     bool = if ansi then "true" else "false"
   in
-    "var _value = " <> toString <> "(" <> bool <> ", " <> value <> ");\n\
-    \var _type = " <> B.stringUtf8 (show (D.toString tipeDoc)) <> ";\n\
-    \function _print(t) { console.log(_value + (" <> bool <> " ? '\x1b[90m' + t + '\x1b[0m' : t)); }\n\
-    \if (_value.length + 3 + _type.length >= 80 || _type.indexOf('\\n') >= 0) {\n\
-    \    _print('\\n    : ' + _type.split('\\n').join('\\n      '));\n\
-    \} else {\n\
-    \    _print(' : ' + _type);\n\
-    \}\n"
+  "var _value = " <> toString <> "(" <> bool <> ", " <> value <> ");\n\
+  \var _type = " <> B.stringUtf8 (show (D.toString tipeDoc)) <> ";\n\
+  \function _print(t) { console.log(_value + (" <> bool <> " ? '\x1b[90m' + t + '\x1b[0m' : t)); }\n\
+  \if (_value.length + 3 + _type.length >= 80 || _type.indexOf('\\n') >= 0) {\n\
+  \    _print('\\n    : ' + _type.split('\\n').join('\\n      '));\n\
+  \} else {\n\
+  \    _print(' : ' + _type);\n\
+  \}\n"
+
+
+
+-- GENERATE FOR REPL ENDPOINT
+
+
+generateForReplEndpoint :: L.Localizer -> Opt.GlobalGraph -> ModuleName.Canonical -> Maybe Name.Name -> Can.Annotation -> B.Builder
+generateForReplEndpoint localizer (Opt.GlobalGraph graph _) home maybeName (Can.Forall _ tipe) =
+  let
+    name = maybe Name.replValueToPrint id maybeName
+    mode = Mode.Dev Nothing
+    debugState = addGlobal mode graph emptyState (Opt.Global ModuleName.debug "toString")
+    evalState = addGlobal mode graph debugState (Opt.Global home name)
+  in
+  Functions.functions
+  <> stateToBuilder evalState
+  <> postMessage localizer home maybeName tipe
+
+
+postMessage :: L.Localizer -> ModuleName.Canonical -> Maybe Name.Name -> Can.Type -> B.Builder
+postMessage localizer home maybeName tipe =
+  let
+    name = maybe Name.replValueToPrint id maybeName
+    value = JsName.toBuilder (JsName.fromGlobal home name)
+    toString = JsName.toBuilder (JsName.fromKernel Name.debug "toAnsiString")
+    tipeDoc = RT.canToDoc localizer RT.None tipe
+    toName n = "\"" <> Name.toBuilder n <> "\""
+  in
+  "self.postMessage({\n\
+  \  name: " <> maybe "null" toName maybeName <> ",\n\
+  \  value: " <> toString <> "(true, " <> value <> "),\n\
+  \  type: " <> B.stringUtf8 (show (D.toString tipeDoc)) <> "\n\
+  \});\n"
 
 
 
@@ -152,7 +188,7 @@ addGlobalHelp :: Mode.Mode -> Graph -> Opt.Global -> State -> State
 addGlobalHelp mode graph global state =
   let
     addDeps deps someState =
-      Set.foldl' (addGlobal mode graph) someState deps
+      Set.foldl' (addGlobal mode graph) someState (MultiSet.toSet deps)
   in
   case graph ! global of
     Opt.Define expr deps ->

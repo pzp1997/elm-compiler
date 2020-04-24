@@ -1,11 +1,14 @@
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Canonicalize.Expression
   ( canonicalize
   , FreeLocals
   , Uses(..)
   , verifyBindings
   , gatherTypedArgs
+  , oneDirectUse
+  , combineUses
   )
   where
 
@@ -33,8 +36,6 @@ import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
 import qualified Reporting.Warning as W
 
-
-
 -- RESULTS
 
 
@@ -51,8 +52,14 @@ data Uses =
     { _direct :: {-# UNPACK #-} !Int
     , _delayed :: {-# UNPACK #-} !Int
     }
+  deriving (Eq)
 
+instance Show Uses where
+  show (Uses { _direct = di, _delayed = de }) =
+    " " ++ show di ++ " direct, " ++ show de ++ " delayed"
 
+-- instance Eq Uses where
+--   (Uses xdi xde) == (Uses ydi yde) = xdi == ydi && xde == yde
 
 -- CANONICALIZE
 
@@ -637,7 +644,7 @@ verifyBindings context bindings (Result.Result k) =
       (\_ warnings1 err ->
           bad info warnings1 err
       )
-      (\freeLocals warnings1 value ->
+      (\(freeLocals :: I.Map Name.Name Uses) warnings1 value ->
           let
             outerFreeLocals =
               Map.difference freeLocals bindings
@@ -693,6 +700,8 @@ findVar region (Env.Env localHome vs _ _ _ qvs _ _) name =
         Env.Local _ ->
           logVar name (Can.VarLocal name)
 
+        -- Env.TopLevel _ definition ->
+        --   logVar name definition
         Env.TopLevel _ ->
           logVar name (Can.VarTopLevel localHome name)
 

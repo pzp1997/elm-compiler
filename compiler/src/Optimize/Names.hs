@@ -18,11 +18,12 @@ module Optimize.Names
 
 import qualified Data.Map as Map
 import qualified Data.Name as Name
-import qualified Data.Set as Set
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified Data.Index as Index
+import qualified Data.MultiSet as MultiSet
+import Data.MultiSet (MultiSet)
 import qualified Elm.ModuleName as ModuleName
 import qualified Reporting.Annotation as A
 
@@ -35,16 +36,16 @@ newtype Tracker a =
   Tracker (
     forall r.
       Int
-      -> Set.Set Opt.Global
+      -> MultiSet Opt.Global
       -> Map.Map Name.Name Int
-      -> (Int -> Set.Set Opt.Global -> Map.Map Name.Name Int -> a -> r)
+      -> (Int -> MultiSet Opt.Global -> Map.Map Name.Name Int -> a -> r)
       -> r
   )
 
-
-run :: Tracker a -> (Set.Set Opt.Global, Map.Map Name.Name Int, a)
+-- TODO should the Map.Map Name.Name Int be a multiset?
+run :: Tracker a -> (MultiSet Opt.Global, Map.Map Name.Name Int, a)
 run (Tracker k) =
-  k 0 Set.empty Map.empty
+  k 0 MultiSet.empty Map.empty
     (\_uid deps fields value -> (deps, fields, value))
 
 
@@ -57,21 +58,21 @@ generate =
 registerKernel :: Name.Name -> a -> Tracker a
 registerKernel home value =
   Tracker $ \uid deps fields ok ->
-    ok uid (Set.insert (Opt.toKernelGlobal home) deps) fields value
+    ok uid (MultiSet.insert (Opt.toKernelGlobal home) deps) fields value
 
 
 registerGlobal :: ModuleName.Canonical -> Name.Name -> Tracker Opt.Expr
 registerGlobal home name =
   Tracker $ \uid deps fields ok ->
     let global = Opt.Global home name in
-    ok uid (Set.insert global deps) fields (Opt.VarGlobal global)
+    ok uid (MultiSet.insert global deps) fields (Opt.VarGlobal global)
 
 
 registerDebug :: Name.Name -> ModuleName.Canonical -> A.Region -> Tracker Opt.Expr
 registerDebug name home region =
   Tracker $ \uid deps fields ok ->
     let global = Opt.Global ModuleName.debug name in
-    ok uid (Set.insert global deps) fields (Opt.VarDebug name home region Nothing)
+    ok uid (MultiSet.insert global deps) fields (Opt.VarDebug name home region Nothing)
 
 
 registerCtor :: ModuleName.Canonical -> Name.Name -> Index.ZeroBased -> Can.CtorOpts -> Tracker Opt.Expr
@@ -79,7 +80,7 @@ registerCtor home name index opts =
   Tracker $ \uid deps fields ok ->
     let
       global = Opt.Global home name
-      newDeps = Set.insert global deps
+      newDeps = MultiSet.insert global deps
     in
     case opts of
       Can.Normal ->
@@ -93,7 +94,7 @@ registerCtor home name index opts =
             _ -> Opt.VarEnum global index
 
       Can.Unbox ->
-        ok uid (Set.insert identity newDeps) fields (Opt.VarBox global)
+        ok uid (MultiSet.insert identity newDeps) fields (Opt.VarBox global)
 
 
 identity :: Opt.Global
@@ -104,7 +105,7 @@ identity =
 registerField :: Name.Name -> a -> Tracker a
 registerField name value =
   Tracker $ \uid d fields ok ->
-    ok uid d (Map.insertWith (+) name 1 fields) value
+    ok uid d (addOne name fields) value
 
 
 registerFieldDict :: Map.Map Name.Name v -> a -> Tracker a
@@ -123,9 +124,9 @@ registerFieldList names value =
     ok uid deps (foldr addOne fields names) value
 
 
-addOne :: Name.Name -> Map.Map Name.Name Int -> Map.Map Name.Name Int
-addOne name fields =
-  Map.insertWith (+) name 1 fields
+addOne :: Ord a => a -> Map.Map a Int -> Map.Map a Int
+addOne x counts =
+  Map.insertWith (+) x 1 counts
 
 
 

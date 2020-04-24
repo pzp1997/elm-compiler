@@ -3,6 +3,8 @@ module Generate
   ( debug
   , dev
   , prod
+  , prod'
+  , SimplifyOptions (..)
   , repl
   )
   where
@@ -29,10 +31,13 @@ import qualified File
 import qualified Generate.JavaScript as JS
 import qualified Generate.Mode as Mode
 import qualified Nitpick.Debug as Nitpick
+import qualified Simplify as Simpl
 import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
 
+import System.IO.Unsafe (unsafePerformIO)
+import AST.Display
 
 -- NOTE: This is used by Make, Repl, and Reactor right now. But it may be
 -- desireable to have Repl and Reactor to keep foreign objects in memory
@@ -76,6 +81,28 @@ prod root details (Build.Artifacts pkg _ roots modules) =
       let mains = gatherMains pkg objects roots
       return $ JS.generate mode graph mains
 
+data SimplifyOptions = SimplifyOptions
+  { opt :: Bool
+  , dump :: Bool
+  , dumpOrig :: Bool
+  , dumpMains :: Bool
+  }
+
+prod' :: SimplifyOptions -> FilePath -> Details.Details -> Build.Artifacts -> Task B.Builder
+prod' (SimplifyOptions opt dump dumpOrig dumpMains)
+  root details (Build.Artifacts pkg _ roots modules) =
+  do  objects <- finalizeObjects =<< loadObjects root details modules
+      checkForDebugUses objects
+      let graph = objectsToGlobalGraph objects
+      let mains = gatherMains pkg objects roots
+      let graph' = Simpl.simplify mains graph
+      let mode = Mode.Prod (Mode.shortenFieldNames graph')
+      return $ unsafePerformIO $ do
+        if dumpOrig then putStrLn $ show graph else return ()
+        if dump then putStrLn $ show graph' else return ()
+        if dumpMains then putStrLn $ show mains else return ()
+        if opt then putStrLn "Generating simplified code" else return ()
+        return $ JS.generate mode (if opt then graph' else graph) mains
 
 repl :: FilePath -> Details.Details -> Bool -> Build.ReplArtifacts -> N.Name -> Task B.Builder
 repl root details ansi (Build.ReplArtifacts home modules localizer annotations) name =
@@ -99,18 +126,18 @@ checkForDebugUses (Objects _ locals) =
 -- GATHER MAINS
 
 
-gatherMains :: Pkg.Name -> Objects -> NE.List Build.Main -> Map.Map ModuleName.Canonical Opt.Main
-gatherMains pkg (Objects _ locals) buildMains =
-  Map.fromList $ Maybe.mapMaybe (lookupMain pkg locals) (NE.toList buildMains)
+gatherMains :: Pkg.Name -> Objects -> NE.List Build.Root -> Map.Map ModuleName.Canonical Opt.Main
+gatherMains pkg (Objects _ locals) roots =
+  Map.fromList $ Maybe.mapMaybe (lookupMain pkg locals) (NE.toList roots)
 
 
-lookupMain :: Pkg.Name -> Map.Map ModuleName.Raw Opt.LocalGraph -> Build.Main -> Maybe (ModuleName.Canonical, Opt.Main)
-lookupMain pkg locals buildMain =
+lookupMain :: Pkg.Name -> Map.Map ModuleName.Raw Opt.LocalGraph -> Build.Root -> Maybe (ModuleName.Canonical, Opt.Main)
+lookupMain pkg locals root =
   let
     toPair name (Opt.LocalGraph maybeMain _ _) =
       (,) (ModuleName.Canonical pkg name) <$> maybeMain
   in
-  case buildMain of
+  case root of
     Build.Inside  name     -> toPair name =<< Map.lookup name locals
     Build.Outside name _ g -> toPair name g
 

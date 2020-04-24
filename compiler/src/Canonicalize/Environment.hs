@@ -72,6 +72,7 @@ type Qualified a =
 data Var
   = Local A.Region
   | TopLevel A.Region
+  -- | TopLevel A.Region Can.Expr_
   | Foreign (Map.Map ModuleName.Canonical Can.Annotation)
 
 
@@ -145,6 +146,7 @@ addLocalBoth name region var =
     Local parentRegion ->
       Result.throw (Error.Shadowing name parentRegion region)
 
+    -- TopLevel parentRegion _ ->
     TopLevel parentRegion ->
       Result.throw (Error.Shadowing name parentRegion region)
 

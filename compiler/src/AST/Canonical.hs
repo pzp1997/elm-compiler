@@ -239,6 +239,7 @@ data Module =
     , _aliases :: Map.Map Name Alias
     , _binops  :: Map.Map Name Binop
     , _effects :: Effects
+    , _inlineable :: [Name]
     }
 
 

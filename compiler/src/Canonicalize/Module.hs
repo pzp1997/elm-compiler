@@ -28,7 +28,7 @@ import qualified Reporting.Error.Canonicalize as Error
 import qualified Reporting.Result as Result
 import qualified Reporting.Warning as W
 
-
+import qualified Debug.Trace as Debug
 
 -- RESULT
 
@@ -50,11 +50,11 @@ canonicalize pkg ifaces modul@(Src.Module _ exports docs imports values _ _ bino
         Local.add modul =<<
           Foreign.createInitialEnv home ifaces imports
 
-      cvalues <- canonicalizeValues env values
+      (cvalues, inlineable) <- canonicalizeValues env values
       ceffects <- Effects.canonicalize env values cunions effects
       cexports <- canonicalizeExports values cunions caliases cbinops ceffects exports
 
-      return $ Can.Module home cexports docs cvalues cunions caliases cbinops ceffects
+      return $ Can.Module home cexports docs cvalues cunions caliases cbinops ceffects inlineable
 
 
 
@@ -76,10 +76,13 @@ canonicalizeBinop (A.At _ (Src.Infix op associativity precedence func)) =
 --
 
 
-canonicalizeValues :: Env.Env -> [A.Located Src.Value] -> Result i [W.Warning] Can.Decls
+canonicalizeValues :: Env.Env -> [A.Located Src.Value] -> Result i [W.Warning] (Can.Decls, [Name.Name])
 canonicalizeValues env values =
-  do  nodes <- traverse (toNodeOne env) values
-      detectCycles (Graph.stronglyConnComp nodes)
+  do  canonicalizedValues <- traverse (toNodeOne env) values
+      let (nodes, uses) = unzip canonicalizedValues
+      let inlineable = Map.keys . Map.filter (Expr.oneDirectUse ==) . Map.unionsWith Expr.combineUses $ uses
+      -- Debug.trace ("inlineable = " ++ show inlineable) $
+      (\decls -> (decls, inlineable)) <$> detectCycles (Graph.stronglyConnComp nodes)
 
 
 detectCycles :: [Graph.SCC NodeTwo] -> Result i w Can.Decls
@@ -142,8 +145,15 @@ type NodeTwo =
   (Can.Def, Name.Name, [Name.Name])
 
 
-toNodeOne :: Env.Env -> A.Located Src.Value -> Result i [W.Warning] NodeOne
+traceFreeLocals :: Name.Name -> Name.Name -> Expr.FreeLocals -> Expr.FreeLocals
+traceFreeLocals home name freeLocals =
+  freeLocals
+  -- Debug.trace ("free locals of " ++ show home ++ "." ++ show name ++ " = " ++ show freeLocals) freeLocals
+
+
+toNodeOne :: Env.Env -> A.Located Src.Value -> Result i [W.Warning] (NodeOne, Expr.FreeLocals)
 toNodeOne env (A.At _ (Src.Value aname@(A.At _ name) srcArgs body maybeType)) =
+  let (Env.Env (ModuleName.Canonical _ home) _ _ _ _ _ _ _) = env in
   case maybeType of
     Nothing ->
       do  (args, argBindings) <-
@@ -158,9 +168,11 @@ toNodeOne env (A.At _ (Src.Value aname@(A.At _ name) srcArgs body maybeType)) =
 
           let def = Can.Def aname args cbody
           return
-            ( toNodeTwo name srcArgs def freeLocals
-            , name
-            , Map.keys freeLocals
+            ( ( toNodeTwo name srcArgs def freeLocals
+              , name
+              , Map.keys freeLocals
+              )
+            , traceFreeLocals home name freeLocals
             )
 
     Just srcType ->
@@ -178,9 +190,11 @@ toNodeOne env (A.At _ (Src.Value aname@(A.At _ name) srcArgs body maybeType)) =
 
           let def = Can.TypedDef aname freeVars args cbody resultType
           return
-            ( toNodeTwo name srcArgs def freeLocals
-            , name
-            , Map.keys freeLocals
+            ( ( toNodeTwo name srcArgs def freeLocals
+              , name
+              , Map.keys freeLocals
+              )
+            , traceFreeLocals home name freeLocals
             )
 
 
@@ -236,11 +250,11 @@ checkExposed
   -> Map.Map Name.Name alias
   -> Map.Map Name.Name binop
   -> Can.Effects
-  -> A.Located Src.Exposed
+  -> Src.Exposed
   -> Result i w (Dups.Dict (A.Located Can.Export))
-checkExposed values unions aliases binops effects (A.At region exposed) =
+checkExposed values unions aliases binops effects exposed =
   case exposed of
-    Src.Lower name ->
+    Src.Lower (A.At region name) ->
       if Map.member name values then
         ok name region Can.ExportValue
       else
@@ -252,23 +266,23 @@ checkExposed values unions aliases binops effects (A.At region exposed) =
             Result.throw $ Error.ExportNotFound region Error.BadVar name $
               ports ++ Map.keys values
 
-    Src.Operator name ->
+    Src.Operator region name ->
       if Map.member name binops then
         ok name region Can.ExportBinop
       else
         Result.throw $ Error.ExportNotFound region Error.BadOp name $
           Map.keys binops
 
-    Src.Upper name Src.Public ->
+    Src.Upper (A.At region name) (Src.Public dotDotRegion) ->
       if Map.member name unions then
         ok name region Can.ExportUnionOpen
       else if Map.member name aliases then
-        Result.throw $ Error.ExportOpenAlias region name
+        Result.throw $ Error.ExportOpenAlias dotDotRegion name
       else
         Result.throw $ Error.ExportNotFound region Error.BadType name $
           Map.keys unions ++ Map.keys aliases
 
-    Src.Upper name Src.Private ->
+    Src.Upper (A.At region name) Src.Private ->
       if Map.member name unions then
         ok name region Can.ExportUnionClosed
       else if Map.member name aliases then

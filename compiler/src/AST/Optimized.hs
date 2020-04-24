@@ -31,6 +31,8 @@ import qualified Data.Set as Set
 import qualified AST.Canonical as Can
 import qualified AST.Utils.Shader as Shader
 import qualified Data.Index as Index
+import qualified Data.MultiSet as MultiSet
+import Data.MultiSet (MultiSet)
 import qualified Elm.Float as EF
 import qualified Elm.Kernel as K
 import qualified Elm.ModuleName as ModuleName
@@ -148,18 +150,19 @@ data Main
       }
 
 
+-- TODO: Convert to MultiSets
 data Node
-  = Define Expr (Set.Set Global)
-  | DefineTailFunc [Name] Expr (Set.Set Global)
+  = Define Expr (MultiSet Global)
+  | DefineTailFunc [Name] Expr (MultiSet Global)
   | Ctor Index.ZeroBased Int
   | Enum Index.ZeroBased
   | Box
   | Link Global
-  | Cycle [Name] [(Name, Expr)] [Def] (Set.Set Global)
+  | Cycle [Name] [(Name, Expr)] [Def] (MultiSet Global)
   | Manager EffectsType
-  | Kernel [K.Chunk] (Set.Set Global)
-  | PortIncoming Expr (Set.Set Global)
-  | PortOutgoing Expr (Set.Set Global)
+  | Kernel [K.Chunk] (MultiSet Global)
+  | PortIncoming Expr (MultiSet Global)
+  | PortOutgoing Expr (MultiSet Global)
 
 
 data EffectsType = Cmd | Sub | Fx
@@ -195,7 +198,7 @@ addKernel :: Name.Name -> [K.Chunk] -> GlobalGraph -> GlobalGraph
 addKernel shortName chunks (GlobalGraph nodes fields) =
   let
     global = toKernelGlobal shortName
-    node = Kernel chunks (foldr addKernelDep Set.empty chunks)
+    node = Kernel chunks (foldr addKernelDep MultiSet.empty chunks)
   in
   GlobalGraph
     { _g_nodes = Map.insert global node nodes
@@ -203,12 +206,12 @@ addKernel shortName chunks (GlobalGraph nodes fields) =
     }
 
 
-addKernelDep :: K.Chunk -> Set.Set Global -> Set.Set Global
+addKernelDep :: K.Chunk -> MultiSet Global -> MultiSet Global
 addKernelDep chunk deps =
   case chunk of
     K.JS _              -> deps
-    K.ElmVar home name  -> Set.insert (Global home name) deps
-    K.JsVar shortName _ -> Set.insert (toKernelGlobal shortName) deps
+    K.ElmVar home name  -> MultiSet.insert (Global home name) deps
+    K.JsVar shortName _ -> MultiSet.insert (toKernelGlobal shortName) deps
     K.ElmField _        -> deps
     K.JsField _         -> deps
     K.JsEnum _          -> deps
@@ -245,7 +248,6 @@ instance Ord Global where
 instance Binary Global where
   get = liftM2 Global get get
   put (Global a b) = put a >> put b
-
 
 instance Binary Expr where
   put expr =

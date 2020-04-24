@@ -8,7 +8,6 @@ module Reporting.Exit
   , Publish(..), publishToReport
   , Install(..), installToReport
   , Reactor(..), reactorToReport
-  , Worker(..), workerToReport
   , newPackageOverview
   --
   , Solver(..)
@@ -1768,8 +1767,8 @@ data BuildProjectProblem
   | BP_WithBadExtension FilePath
   | BP_WithAmbiguousSrcDir FilePath FilePath FilePath
   | BP_MainPathDuplicate FilePath FilePath
-  | BP_MainNameDuplicate ModuleName.Raw FilePath FilePath
-  | BP_MainNameInvalid FilePath FilePath [String]
+  | BP_RootNameDuplicate ModuleName.Raw FilePath FilePath
+  | BP_RootNameInvalid FilePath FilePath [String]
   | BP_CannotLoadDependencies
   | BP_Cycle ModuleName.Raw [ModuleName.Raw]
   | BP_MissingExposed (NE.List (ModuleName.Raw, Import.Problem))
@@ -1836,7 +1835,7 @@ toProjectProblemReport projectProblem =
               \ unstuck!"
         ]
 
-    BP_MainNameDuplicate name outsidePath otherPath ->
+    BP_RootNameDuplicate name outsidePath otherPath ->
       Help.report "MODULE NAME CLASH" Nothing
         "These two files are causing a module name clash:"
         [ D.indent 4 $ D.red $ D.vcat $ map D.fromChars [ outsidePath, otherPath ]
@@ -1847,7 +1846,7 @@ toProjectProblemReport projectProblem =
             "Try changing to a different module name in one of them!"
         ]
 
-    BP_MainNameInvalid givenPath srcDir _ ->
+    BP_RootNameInvalid givenPath srcDir _ ->
       Help.report "UNEXPECTED FILE NAME" Nothing
         "I am having trouble with this file name:"
         [ D.indent 4 $ D.red $ D.fromChars givenPath
@@ -2070,39 +2069,3 @@ replToReport problem =
 
     ReplBlocked ->
       corruptCacheReport
-
-
-
--- WORKER
-
-
-data Worker
-  = WorkerInputError Error.Module
-  | WorkerNoMain
-
-
-workerToReport :: Worker -> Help.Report
-workerToReport problem =
-  case problem of
-    WorkerInputError err ->
-      Help.compilerReport "/" err []
-
-    WorkerNoMain ->
-      Help.report "NO MAIN" Nothing
-        (
-          "Without a `main` value, I do not know what to show on screen!"
-        )
-        [ D.reflow $
-            "Adding a `main` value can be as brief as:"
-        , D.vcat
-            [ D.fillSep [D.cyan "import","Html"]
-            , ""
-            , D.fillSep [D.green "main","="]
-            , D.indent 2 $ D.fillSep [D.cyan "Html" <> ".text",D.dullyellow "\"Hello!\""]
-            ]
-        , D.reflow $
-            "Try adding something like that!"
-        , D.toSimpleNote $
-            "I recommend looking through https://guide.elm-lang.org for more advice on\
-            \ how to fill in `main` values."
-        ]
