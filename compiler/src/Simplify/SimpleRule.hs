@@ -20,6 +20,7 @@ revFxn = global Pkg.core "List" "reverse"
 andBop = global Pkg.core "Basics" "and"
 mapFxn = global Pkg.core "List" "map"
 composeFxn = global Pkg.core "Basics" "composeL"
+apRFxn = global Pkg.core "Basics" "apR"
 
 reverseLiteral :: SimpleRule
 reverseLiteral = SimpleRule revFxn rewrite
@@ -46,6 +47,17 @@ mapComposition = SimpleRule mapFxn rewrite
       let compose = Call (VarGlobal composeFxn) [Function outerArgs outerBody, Function innerArgs innerBody] in
       let mapper = Call (VarGlobal mapFxn) [compose, rest] in
       Just $ mapper
+    rewrite _ = Nothing
+
+-- l |> List.map f
+-- List.map l
+-- Rewrite simple maps
+pipeMap :: SimpleRule
+pipeMap = SimpleRule apRFxn rewrite
+  where
+    rewrite [l, Call (VarGlobal mapFxn) [f] ] =
+      Just $ Call (VarGlobal mapFxn) [f, l]
+    rewrite _ = Nothing
 
 
-simpleRules = [reverseLiteral, applyAnd, mapComposition]
+simpleRules = [reverseLiteral, applyAnd, pipeMap, mapComposition]
