@@ -249,10 +249,6 @@ instance Binary Global where
   get = liftM2 Global get get
   put (Global a b) = put a >> put b
 
-instance (Ord a, Binary a) => Binary (MultiSet a) where
-  get = fmap MultiSet.fromMap get
-  put = put . MultiSet.toMap
-
 instance Binary Expr where
   put expr =
     case expr of

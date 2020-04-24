@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Data.MultiSet where
 
+import Data.Binary (Binary, get, put)
 import Data.Maybe (fromMaybe)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -66,6 +67,9 @@ foldlWithKey f base (MultiSet s) = Map.foldlWithKey f base s
 foldrWithKey :: (k -> Int -> b -> b) -> b -> MultiSet k -> b
 foldrWithKey f base (MultiSet s) = Map.foldrWithKey f base s
 
+instance (Ord a, Binary a) => Binary (MultiSet a) where
+  get = fmap fromMap get
+  put = put . toMap
 
 instance Ord a => Semigroup (MultiSet a) where
   (<>) = union

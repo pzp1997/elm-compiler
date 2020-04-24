@@ -19,16 +19,3 @@ simplify :: Map.Map ModuleName.Canonical Opt.Main -> Opt.GlobalGraph -> Opt.Glob
 simplify mains graph =
   let inlineWithMain g = snd <$> inline mains g
   in fromEdit $ editUntilFixpoint (rewrite <=< inlineWithMain) graph
-  -- applyN 1 simplifyStep graph
-  -- where
-  --   simplifyStep graph@(Opt.GlobalGraph usesBy _) =
-  --     let Edited ((_, graph'), _) = inline usesOf graph in
-  --     rewrite graph'
-
--- applyN :: Int -> (a -> a) -> a -> a
--- applyN n f x =
---   if n <= 0 then x
---   else aux n x
---   where
---     aux 1 x = f x
---     aux n x = aux (n - 1) (f x)

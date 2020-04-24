@@ -240,13 +240,14 @@ subst var expr = mapExpr replaceVar
 betaReduce :: [Name] -> Expr -> [Expr] -> Maybe Expr
 betaReduce argNames body args =
   let (argNames', args', body') = aux argNames args in
-    if length argNames' == 0 then Just body'
+    if null args && not (null args) then Just $ Call body' args'
+    else if null argNames' then Just body'
     else if length argNames' == length argNames then Nothing
     else Just $ Call (Function argNames' body') args'
   where
     aux :: [Name] -> [Expr] -> ([Name], [Expr], Expr)
     aux [] [] = ([], [], body)
-    aux [] args = error "function called with too many arguments"
+    aux [] args = ([], args, body)
     aux argNames [] = (argNames, [], body)
     aux (argName : argNames_t) (arg : args_t) =
       let (argNames', args', body') = aux argNames_t args_t
