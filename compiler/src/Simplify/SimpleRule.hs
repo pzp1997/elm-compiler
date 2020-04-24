@@ -36,11 +36,11 @@ applyAnd = SimpleRule andBop rewrite
     rewrite [Bool True, expr] = Just $ expr
     rewrite [expr, Bool True] = Just $ expr
     rewrite _ = Nothing
-    
+
 -- List.map (fun x -> to_string x) (fun (y -> y + 1) []) ==> rewrites to
 -- List.map (fun y ->  (Call y body)
 mapComposition :: SimpleRule
-mapComposition = SimpleRule mapFxn rewrite 
+mapComposition = SimpleRule mapFxn rewrite
   where
     rewrite [Function outerArgs outerBody, Call (VarGlobal mapFxn) [Function innerArgs innerBody, rest]] =
       let compose = Call (VarGlobal composeFxn) [Function outerArgs outerBody, Function innerArgs innerBody] in

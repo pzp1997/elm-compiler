@@ -106,9 +106,7 @@ deciderHelper f (FanOut { _path, _tests, _fallback }) = do
 
 mapFields :: (Monad m, Ord k) => (a -> m a) -> Map k a -> m (Map k a)
 mapFields f updates =
-  Map.fromList <$>
-  (mapM (\(k, a) -> (k, ) <$> f a) $
-  Map.assocs updates)
+  Map.fromList <$> (mapM (\(k, a) -> (k, ) <$> f a) $ Map.assocs updates)
 
 mapExpr :: (Expr -> Expr) -> Expr -> Expr
 mapExpr f = runIdentity . mapExprM (return . f)
