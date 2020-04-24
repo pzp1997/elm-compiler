@@ -15,7 +15,16 @@ import Simplify.Inlining (inline, invertUses, buildUsesOf)
 import Simplify.RewriteRules (rewrite)
 import Simplify.Utils (Edited(..), exprDeps, editUntilFixpoint, fromEdit)
 
-simplify :: Map.Map ModuleName.Canonical Opt.Main -> Opt.GlobalGraph -> Opt.GlobalGraph
-simplify mains graph =
+simplify :: Maybe Int -> Map.Map ModuleName.Canonical Opt.Main -> Opt.GlobalGraph -> Opt.GlobalGraph
+simplify limit mains graph =
   let inlineWithMain g = snd <$> inline mains g
-  in fromEdit $ editUntilFixpoint (rewrite <=< inlineWithMain) graph
+  in fromEdit $ editUntilFixpoint limit (rewrite <=< inlineWithMain) graph
+
+
+applyN :: Int -> (a -> a) -> a -> a
+applyN n f x =
+  if n <= 0 then x
+  else aux n x
+  where
+    aux 1 x = f x
+    aux n x = aux (n - 1) (f x)

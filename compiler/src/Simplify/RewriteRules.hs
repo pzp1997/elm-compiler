@@ -137,7 +137,7 @@ foldExpr f combine base e = foldr ($) base final
 
 
 mapUntilFixpoint :: (Expr -> Maybe Expr) -> Expr -> Edited Expr
-mapUntilFixpoint f = mapExprM $ editUntilFixpoint $ liftEdit f
+mapUntilFixpoint f = mapExprM $ editUntilFixpoint Nothing $ liftEdit f
 
 updateDeps :: Expr -> MultiSet Global -> Edited (Expr, MultiSet Global)
 updateDeps expr deps =

@@ -5,6 +5,7 @@ module Generate
   , prod
   , prod'
   , SimplifyOptions (..)
+  , DumpOptions (..)
   , repl
   )
   where
@@ -82,27 +83,33 @@ prod root details (Build.Artifacts pkg _ roots modules) =
       return $ JS.generate mode graph mains
 
 data SimplifyOptions = SimplifyOptions
-  { opt :: Bool
-  , dump :: Bool
+  { simplifyEnabled :: Bool
+  , simplifyLimit :: Maybe Int
+  }
+
+data DumpOptions = DumpOptions
+  { dump :: Bool
   , dumpOrig :: Bool
   , dumpMains :: Bool
   }
 
-prod' :: SimplifyOptions -> FilePath -> Details.Details -> Build.Artifacts -> Task B.Builder
-prod' (SimplifyOptions opt dump dumpOrig dumpMains)
+prod' :: SimplifyOptions -> DumpOptions -> FilePath -> Details.Details -> Build.Artifacts -> Task B.Builder
+prod' (SimplifyOptions simplifyEnabled simplifyLimit) (DumpOptions dump dumpOrig dumpMains)
   root details (Build.Artifacts pkg _ roots modules) =
   do  objects <- finalizeObjects =<< loadObjects root details modules
       checkForDebugUses objects
       let graph = objectsToGlobalGraph objects
       let mains = gatherMains pkg objects roots
-      let graph' = Simpl.simplify mains graph
+      let graph' = if simplifyEnabled || dump then
+                     Simpl.simplify simplifyLimit mains graph
+                   else graph
       let mode = Mode.Prod (Mode.shortenFieldNames graph')
       return $ unsafePerformIO $ do
         if dumpOrig then putStrLn $ show graph else return ()
         if dump then putStrLn $ show graph' else return ()
         if dumpMains then putStrLn $ show mains else return ()
-        if opt then putStrLn "Generating simplified code" else return ()
-        return $ JS.generate mode (if opt then graph' else graph) mains
+        if simplifyEnabled then putStrLn "Generating simplified code" else return ()
+        return $ JS.generate mode (if simplifyEnabled then graph' else graph) mains
 
 repl :: FilePath -> Details.Details -> Bool -> Build.ReplArtifacts -> N.Name -> Task B.Builder
 repl root details ansi (Build.ReplArtifacts home modules localizer annotations) name =

@@ -38,10 +38,12 @@ liftEdit f x =
     Just x' -> Edited (x', True)
     Nothing -> Edited (x, False)
 
-editUntilFixpoint :: (a -> Edited a) -> a -> Edited a
-editUntilFixpoint f x =
-  let e@(Edited (x', b)) = f x
-  in if b then e >>= editUntilFixpoint f else Edited (x', False)
+editUntilFixpoint :: Maybe Int -> (a -> Edited a) -> a -> Edited a
+editUntilFixpoint (Just limit) _ x | limit <= 0 = Edited (x, True)
+editUntilFixpoint limit f x =
+  let e@(Edited (x', b)) = f x in
+  let limit' = (\n -> n - 1) <$> limit in
+  if b then e >>= editUntilFixpoint limit' f else Edited (x', False)
 
 fromEdit :: Edited a -> a
 fromEdit (Edited (x, _)) = x

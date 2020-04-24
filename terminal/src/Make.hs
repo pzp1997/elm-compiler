@@ -8,6 +8,7 @@ module Make
   , output
   , docsFile
   , simplify
+  , dump
   )
   where
 
@@ -31,6 +32,7 @@ import qualified Reporting.Exit as Exit
 import qualified Reporting.Task as Task
 import qualified Stuff
 import Terminal (Parser(..))
+import Text.Read (readMaybe)
 
 
 
@@ -42,6 +44,7 @@ data Flags =
     { _debug :: Bool
     , _optimize :: Bool
     , _simplify :: Maybe Generate.SimplifyOptions
+    , _dump :: Maybe Generate.DumpOptions
     , _output :: Maybe Output
     , _report :: Maybe ReportType
     , _docs :: Maybe FilePath
@@ -66,7 +69,7 @@ type Task a = Task.Task Exit.Make a
 
 
 run :: [FilePath] -> Flags -> IO ()
-run paths flags@(Flags _ _ _ _ report _) =
+run paths flags@(Flags _ _ _ _ _ report _) =
   do  style <- getStyle report
       maybeRoot <- Stuff.findRoot
       Reporting.attemptWithStyle style Exit.makeToReport $
@@ -76,10 +79,10 @@ run paths flags@(Flags _ _ _ _ report _) =
 
 
 runHelp :: FilePath -> [FilePath] -> Reporting.Style -> Flags -> IO (Either Exit.Make ())
-runHelp root paths style (Flags debug optimize simplifyOptions maybeOutput _ maybeDocs) =
+runHelp root paths style (Flags debug optimize simplifyOptions dumpOptions maybeOutput _ maybeDocs) =
   BW.withScope $ \scope ->
   Stuff.withRootLock root $ Task.run $
-  do  desiredMode <- getMode debug optimize simplifyOptions
+  do  desiredMode <- getMode debug optimize (Maybe.fromMaybe defaultSimplifyOptions simplifyOptions) dumpOptions
       details <- Task.eio Exit.MakeBadDetails (Details.load style scope root)
       case paths of
         [] ->
@@ -131,10 +134,13 @@ getStyle report =
     Just Json -> return Reporting.json
 
 
-getMode :: Bool -> Bool -> Maybe Generate.SimplifyOptions -> Task DesiredMode
-getMode debug optimize simplifyOptions =
-  case (debug, optimize, simplifyOptions) of
-    (_, _, Just opts) -> return $ Simplify opts
+getMode :: Bool -> Bool -> Generate.SimplifyOptions -> Maybe Generate.DumpOptions -> Task DesiredMode
+getMode debug optimize simplifyOptions@(Generate.SimplifyOptions simplifyEnabled _) dumpOptions =
+  if simplifyEnabled then
+    return $ Simplify (simplifyOptions, Maybe.fromMaybe defaultDumpOptions dumpOptions)
+  else
+  case (debug, optimize, dumpOptions) of
+    (_, _, Just dumpOpts) -> return $ Simplify (simplifyOptions, dumpOpts)
     (True , True , _) -> Task.throw Exit.MakeCannotOptimizeAndDebug
     (True , False, _) -> return Debug
     (False, False, _) -> return Dev
@@ -255,7 +261,7 @@ generate style target builder names =
 -- TO BUILDER
 
 
-data DesiredMode = Debug | Dev | Prod | Simplify Generate.SimplifyOptions
+data DesiredMode = Debug | Dev | Prod | Simplify (Generate.SimplifyOptions, Generate.DumpOptions)
 
 
 toBuilder :: FilePath -> Details.Details -> DesiredMode -> Build.Artifacts -> Task B.Builder
@@ -265,7 +271,7 @@ toBuilder root details desiredMode artifacts =
       Debug -> Generate.debug root details artifacts
       Dev   -> Generate.dev   root details artifacts
       Prod  -> Generate.prod  root details artifacts
-      Simplify opts -> Generate.prod' opts root details artifacts
+      Simplify (simplifyOptions, dumpOptions) -> Generate.prod' simplifyOptions dumpOptions root details artifacts
 
 
 -- PARSERS
@@ -324,8 +330,8 @@ isDevNull name =
 simplify :: Parser Generate.SimplifyOptions
 simplify =
   Parser
-  { _singular = "optimization"
-  , _plural = "optimizations"
+  { _singular = "simplify"
+  , _plural = "simplifies"
   , _parser = parseSimplify
   , _suggest = \_ -> return []
   , _examples = \_ -> return []
@@ -334,9 +340,32 @@ simplify =
 parseSimplify :: String -> Maybe Generate.SimplifyOptions
 parseSimplify s =
   Just $ Generate.SimplifyOptions
-  { Generate.opt = elem "opt" parsed
-  , Generate.dump = elem "dump" parsed
+  { Generate.simplifyEnabled = True
+  , Generate.simplifyLimit = readMaybe s
+  }
+  where parsed = words s
+
+defaultSimplifyOptions :: Generate.SimplifyOptions
+defaultSimplifyOptions = Generate.SimplifyOptions False Nothing
+
+dump :: Parser Generate.DumpOptions
+dump =
+  Parser
+  { _singular = "dump"
+  , _plural = "dumps"
+  , _parser = parseDump
+  , _suggest = \_ -> return []
+  , _examples = \_ -> return []
+  }
+
+parseDump :: String -> Maybe Generate.DumpOptions
+parseDump s =
+  Just $ Generate.DumpOptions
+  { Generate.dump = elem "dump" parsed
   , Generate.dumpOrig = elem "dumporig" parsed
   , Generate.dumpMains = elem "dumpmains" parsed
   }
   where parsed = words s
+
+defaultDumpOptions :: Generate.DumpOptions
+defaultDumpOptions = Generate.DumpOptions False False False
