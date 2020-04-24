@@ -6,6 +6,7 @@ module Simplify
 import Control.Monad ((<=<))
 
 import qualified AST.Optimized as Opt
+import Control.Arrow (first)
 import qualified Data.Map as Map
 import qualified Data.Name as Name
 import qualified Elm.ModuleName as ModuleName
@@ -15,16 +16,7 @@ import Simplify.Inlining (inline, invertUses, buildUsesOf)
 import Simplify.RewriteRules (rewrite)
 import Simplify.Utils (Edited(..), exprDeps, editUntilFixpoint, fromEdit)
 
-simplify :: Maybe Int -> Map.Map ModuleName.Canonical Opt.Main -> Opt.GlobalGraph -> Opt.GlobalGraph
+simplify :: Maybe Int -> Map.Map ModuleName.Canonical Opt.Main -> Opt.GlobalGraph -> (Opt.GlobalGraph, Int)
 simplify limit mains graph =
-  let inlineWithMain g = snd <$> inline mains g
-  in fromEdit $ editUntilFixpoint limit (rewrite <=< inlineWithMain) graph
-
-
-applyN :: Int -> (a -> a) -> a -> a
-applyN n f x =
-  if n <= 0 then x
-  else aux n x
-  where
-    aux 1 x = f x
-    aux n x = aux (n - 1) (f x)
+  let inlineWithMain g = snd <$> inline mains g in
+  first fromEdit $ editUntilFixpoint limit (rewrite <=< inlineWithMain) graph

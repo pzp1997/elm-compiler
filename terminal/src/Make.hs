@@ -7,7 +7,7 @@ module Make
   , reportType
   , output
   , docsFile
-  , simplify
+  , simplifyLimit
   , dump
   )
   where
@@ -43,7 +43,8 @@ data Flags =
   Flags
     { _debug :: Bool
     , _optimize :: Bool
-    , _simplify :: Maybe Generate.SimplifyOptions
+    , _simplify :: Bool
+    , _simplifyLimit :: Maybe Int
     , _dump :: Maybe Generate.DumpOptions
     , _output :: Maybe Output
     , _report :: Maybe ReportType
@@ -69,7 +70,7 @@ type Task a = Task.Task Exit.Make a
 
 
 run :: [FilePath] -> Flags -> IO ()
-run paths flags@(Flags _ _ _ _ _ report _) =
+run paths flags@(Flags _ _ _ _ _ _ report _) =
   do  style <- getStyle report
       maybeRoot <- Stuff.findRoot
       Reporting.attemptWithStyle style Exit.makeToReport $
@@ -79,10 +80,10 @@ run paths flags@(Flags _ _ _ _ _ report _) =
 
 
 runHelp :: FilePath -> [FilePath] -> Reporting.Style -> Flags -> IO (Either Exit.Make ())
-runHelp root paths style (Flags debug optimize simplifyOptions dumpOptions maybeOutput _ maybeDocs) =
+runHelp root paths style (Flags debug optimize simplify simplifyLimit dumpOptions maybeOutput _ maybeDocs) =
   BW.withScope $ \scope ->
   Stuff.withRootLock root $ Task.run $
-  do  desiredMode <- getMode debug optimize (Maybe.fromMaybe defaultSimplifyOptions simplifyOptions) dumpOptions
+  do  desiredMode <- getMode debug optimize (Generate.SimplifyOptions (simplify || Maybe.isJust simplifyLimit) simplifyLimit) dumpOptions
       details <- Task.eio Exit.MakeBadDetails (Details.load style scope root)
       case paths of
         [] ->
@@ -327,23 +328,18 @@ isDevNull :: String -> Bool
 isDevNull name =
   name == "/dev/null" || name == "NUL" || name == "$null"
 
-simplify :: Parser Generate.SimplifyOptions
-simplify =
+simplifyLimit :: Parser Int
+simplifyLimit =
   Parser
-  { _singular = "simplify"
-  , _plural = "simplifies"
-  , _parser = parseSimplify
+  { _singular = "number of passes"
+  , _plural = "numbers of passes"
+  , _parser = parseSimplifyLimit
   , _suggest = \_ -> return []
   , _examples = \_ -> return []
   }
 
-parseSimplify :: String -> Maybe Generate.SimplifyOptions
-parseSimplify s =
-  Just $ Generate.SimplifyOptions
-  { Generate.simplifyEnabled = True
-  , Generate.simplifyLimit = readMaybe s
-  }
-  where parsed = words s
+parseSimplifyLimit :: String -> Maybe Int
+parseSimplifyLimit s = readMaybe s
 
 defaultSimplifyOptions :: Generate.SimplifyOptions
 defaultSimplifyOptions = Generate.SimplifyOptions False Nothing
