@@ -6,6 +6,16 @@ import qualified Data.Name as Name
 import Data.Name (Name)
 import qualified Elm.ModuleName as ModuleName
 import qualified Elm.Package as Pkg
+import qualified Elm.Float as EF 
+import qualified Data.ByteString.Char8 as BC
+import qualified Data.ByteString.Builder as BB
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Internal as BI
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Lazy.Internal as BLI
+
+import qualified Data.Utf8 as Utf8
+import qualified Text.Read as Read
 
 data SimpleRule = SimpleRule { func :: Global
                              , replace :: [Expr] -> Maybe Expr
@@ -68,28 +78,64 @@ pipeMap = SimpleRule apRFxn rewrite
       Just $ Call (VarGlobal mapFxn) [f, l]
     rewrite _ = Nothing
 
+
+-- Float serialization and deserialization
+ofElmFloat :: EF.Float -> Maybe Double
+ofElmFloat ef =
+  Read.readMaybe .
+  BC.unpack .
+  toEagerByteString .
+  BB.toLazyByteString .
+  Utf8.toBuilder $ ef
+  where
+    toEagerByteString = B.concat . BL.toChunks  
+
+toElmFloat :: Double -> EF.Float
+toElmFloat d = Utf8.fromChars . (show :: Double -> String) $ d 
+
+applyArith :: (Num a) => (a -> a -> a) -> Maybe a -> Maybe a -> Maybe a
+applyArith f (Just i) (Just j) = Just $ f i j
+applyArith _ _ _ = Nothing
+
 -- Constant addition
 constantAdd = SimpleRule addFxn rewrite
   where
     rewrite [Int i, Int j] = Just $ Int (i + j)
+    rewrite [Float i, Float j] =
+      let (i', j') = (ofElmFloat i , ofElmFloat j) in
+          fmap (Float) $ fmap (toElmFloat) $ (applyArith (+) i' j') 
     rewrite _ = Nothing
 
 -- Constant subtraction
 constantSub = SimpleRule subFxn rewrite
   where
     rewrite [Int i, Int j] = Just $ Int (i - j)
+    rewrite [Float i, Float j] =
+      let (i', j') = (ofElmFloat i , ofElmFloat j) in
+          fmap (Float) $ fmap (toElmFloat) $ (applyArith (-) i' j') 
     rewrite _ = Nothing
 
 -- Constant Multiplication
 constantMult = SimpleRule mulFxn rewrite
   where
     rewrite [Int i, Int j] = Just $ Int (i * j)
+    rewrite [Float i, Float j] =
+      let (i', j') = (ofElmFloat i , ofElmFloat j) in
+          fmap (Float) $ fmap (toElmFloat) $ (applyArith (*) i' j') 
     rewrite _ = Nothing
 
 -- Constant Integer Division
 constantIDiv = SimpleRule idivFxn rewrite
   where
     rewrite [Int i, Int j] = Just $ Int (i `div` j)
+    rewrite _ = Nothing
+
+-- Constant Float division
+constantFDiv = SimpleRule fdivFxn rewrite
+  where
+    rewrite [Float i, Float j] =
+      let (i', j') = (ofElmFloat i , ofElmFloat j) in
+          fmap (Float) $ fmap (toElmFloat) $ (applyArith (/) i' j') 
     rewrite _ = Nothing
 
 simpleRules = [reverseLiteral, applyAnd, pipeMap, mapComposition, constantAdd, constantSub, constantMult, constantIDiv]
