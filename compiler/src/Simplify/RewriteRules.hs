@@ -43,94 +43,6 @@ recomputeDeps (PortOutgoing encoder deps) =
   PortOutgoing encoder (exprDeps encoder)
 recomputeDeps x = x
 
-mapExprM :: Monad m => (Expr -> m Expr) -> Expr -> m Expr
-mapExprM f expr =
-  let f' = mapExprM f in
-  f =<< case expr of
-    (List es) -> List <$> mapM f' es
-    (Function argNames body) -> Function argNames <$> f' body
-    (Call func args) -> do
-      args <- mapM f' args
-      func <- f' func
-      return $ Call func args
-    (TailCall n args) -> do
-      es <- mapM f' $ map snd args
-      return $ TailCall n (zip (map fst args) es)
-    (If branches final) -> do
-      branches <- mapM mapBoth branches
-      final <- f' final
-      return $ If branches final
-        where mapBoth (x, y) = do
-                x <- f' x
-                y <- f' y
-                return $ (x, y)
-    (Let def expr) -> do
-      def <- case def of
-        Def n e -> Def n <$> f' e
-        TailDef n ns e -> TailDef n ns <$> f' e
-      expr <- f' expr
-      return $ Let def expr
-    (Destruct d e) -> Destruct d <$> f' e
-    (Case n1 n2 d es) -> do
-      es' <- mapM f' $ map snd es
-      d <- deciderHelper f' d
-      return $ Case n1 n2 d (zip (map fst es) es')
-    (Access e n) -> do
-      e <- f' e
-      return $ Access e n
-    (Update expr updates) -> do
-      expr <- f' expr
-      updates <- mapFields f' updates
-      return $ Update expr updates
-    (Record fields) -> Record <$> mapFields f' fields
-    (Tuple e1 e2 maybeExpr) -> do
-      e1 <- f' e1
-      e2 <- f' e2
-      maybeExpr <- case maybeExpr of
-                     Nothing -> return Nothing
-                     Just e3 -> Just <$> f' e3
-      return $ Tuple e1 e2 maybeExpr
-    _ -> return expr
-
-deciderHelper :: Monad m => (Expr -> m Expr) -> Decider Choice -> m (Decider Choice)
-deciderHelper f (Leaf (Inline expr)) = (Leaf . Inline) <$> f expr
-deciderHelper f l@(Leaf _) = return l
-deciderHelper f (Chain { _success, _failure, _testChain }) = do
-  _success <- deciderHelper f _success
-  _failure <- deciderHelper f _failure
-  return $ Chain { _success, _failure, _testChain }
-deciderHelper f (FanOut { _path, _tests, _fallback }) = do
-  _fallback <- deciderHelper f _fallback
-  _tests <- mapM (\(t, d) -> (t, ) <$> deciderHelper f d) _tests
-  return $ FanOut { _path, _tests, _fallback }
-
-mapFields :: (Monad m, Ord k) => (a -> m a) -> Map k a -> m (Map k a)
-mapFields f updates =
-  Map.fromList <$> (mapM (\(k, a) -> (k, ) <$> f a) $ Map.assocs updates)
-
-mapExpr :: (Expr -> Expr) -> Expr -> Expr
-mapExpr f = runIdentity . mapExprM (return . f)
-
-newtype Collect a b = Collect (b, [a])
-
-instance Functor (Collect a) where
-  fmap f (Collect (x, b)) = (Collect (f x, b))
-
-instance Applicative (Collect a) where
-  pure x = Collect (x, [])
-  (<*>) (Collect (f, l)) (Collect (x, l')) =
-    Collect (f x, l ++ l')
-
-instance Monad (Collect a) where
-  return x = Collect (x, [])
-  (>>=) (Collect (x, l)) f = Collect (x', l ++ l')
-    where (Collect (x', l')) = f x
-
-foldExpr :: (Expr -> a) -> (a -> a -> a) -> a -> Expr -> a
-foldExpr f combine base e = foldr ($) base final
-  where collect expr = Collect (expr, [combine (f expr)])
-        Collect (_, final) = mapExprM collect e
-
 -- REWRITE ENGINE
 
 
@@ -209,7 +121,7 @@ rewriteExpr _ = Nothing
 attemptInline :: Name -> Expr -> Expr -> Maybe Expr
 attemptInline var expr body =
   let numUses = countUses body MultiSet.! var
-  in if uninlineable var body then Nothing
+  in if uninlineable var body || isRecursive var expr then Nothing
   else if numUses == 0 then Just body
   else if numUses == 1 || isSmall expr then
     Just $ subst var expr body
@@ -223,6 +135,7 @@ uninlineable var body =
     aux (Destruct (Destructor _ path) _) | var == rootOfPath path = True
     aux (Case _ root _ _) | var == root = True
     aux (Let (Def v _) _) | var == v = True
+                            -- error $ "inlining shadowed variable " ++ Name.toChars var
     aux _ = False
 
 -- TODO: You know this is wrong
@@ -232,6 +145,7 @@ isRecursive var expr =
   where
     aux :: Expr -> Bool
     aux (VarLocal var') = var == var'
+    aux (Case _ root _ _) = var == root
     aux _ = False
 
 subst :: Name -> Expr -> Expr -> Expr
@@ -239,28 +153,21 @@ subst var expr = mapExpr replaceVar
   where
     replaceVar :: Expr -> Expr
     replaceVar (VarLocal var') | var == var' = expr
+    replaceVar (Case temp root branches jumps) | root == var =
+      Case temp var branches jumps
     replaceVar e = e
 
--- This is fairly sensitive to changes since we need to avoid shadowing
--- TODO: Rewrite this to be readable
--- TODO: Try to break this; might still produce illegal shadowing
 betaReduce :: [Name] -> Expr -> [Expr] -> Maybe Expr
-betaReduce argNames body args =
-  let (argNames', args', body') = aux argNames args in
-    if null args && not (null args) then Just $ Call body' args'
-    else if null argNames' then Just body'
-    else if length argNames' == length argNames then Nothing
-    else Just $ Call (Function argNames' body') args'
-  where
-    aux :: [Name] -> [Expr] -> ([Name], [Expr], Expr)
-    aux [] [] = ([], [], body)
-    aux [] args = ([], args, body)
-    aux argNames [] = (argNames, [], body)
-    aux (argName : argNames_t) (arg : args_t) =
-      let (argNames', args', body') = aux argNames_t args_t
-      in case (attemptInline argName arg body') of
-        Nothing -> (argName : argNames', arg : args', body')
-        Just body'' -> (argNames', args', body'')
+betaReduce [] body [] = Just $ body
+betaReduce [] body args = Just $ Call body args
+betaReduce argNames body [] = Just $ Function argNames body
+betaReduce (argName : argNames) body (arg : args) =
+  case arg of
+    (VarLocal var) | var == argName ->
+                     betaReduce argNames body args
+    _ ->
+      Let (Def argName arg) <$>
+      betaReduce argNames body args
 
 shortcircuit :: [(Expr, Expr)] -> ([(Expr, Expr)], Maybe Expr)
 shortcircuit [] = ([], Nothing)

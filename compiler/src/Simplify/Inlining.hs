@@ -49,7 +49,8 @@ inlineHelp caller callee@(Opt.Global calleeModuleName _) acc@(usesBy, usesOf, ca
   ; guard ((calleeIsSimple || calleeOnlyUsedOnce) && not fromJsonDecodeModule)
   ; let usedByCallee = defsUsedByNode calleeNode
   ; -- inline callee in caller node
-    let callerNode' = mapNode (mapGlobalVarInExpr callee replacement) callerNode
+    let replacement' = renameAllLocalVars replacement
+  ; let callerNode' = mapNode (mapGlobalVarInExpr callee replacement') callerNode
   ; -- update dependencies of caller node
     let callerNode'' = mapNodeDependencies
                         (MultiSet.union usedByCallee . MultiSet.removeAll callee)

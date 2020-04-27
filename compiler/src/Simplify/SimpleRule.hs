@@ -29,8 +29,10 @@ global pkg _module funcName =
 
 revFxn = global Pkg.core "List" "reverse"
 andBop = global Pkg.core "Basics" "and"
+orBop = global Pkg.core "Basics" "or"
 mapFxn = global Pkg.core "List" "map"
 composeFxn = global Pkg.core "Basics" "composeL"
+apLFxn = global Pkg.core "Basics" "apL"
 apRFxn = global Pkg.core "Basics" "apR"
 foldlFxn = global Pkg.core "List" "foldl"
 foldrFxn = global Pkg.core "List" "foldr"
@@ -55,6 +57,16 @@ applyAnd = SimpleRule andBop rewrite
     rewrite [expr, Bool False] = Just $ Bool False
     rewrite [Bool True, expr] = Just $ expr
     rewrite [expr, Bool True] = Just $ expr
+    rewrite _ = Nothing
+
+applyOr :: SimpleRule
+applyOr = SimpleRule orBop rewrite
+  where
+    rewrite [Bool b1, Bool b2] = Just $ Bool (b1 || b2)
+    rewrite [Bool False, expr] = Just $ expr
+    rewrite [expr, Bool False] = Just $ expr
+    rewrite [Bool True, _] = Just $ Bool True
+    rewrite [_, Bool True] = Just $ Bool True
     rewrite _ = Nothing
 
 -- List.map (fun x -> to_string x) (fun (y -> y + 1) []) ==> rewrites to
@@ -137,4 +149,4 @@ constantFDiv = SimpleRule fdivFxn rewrite
           fmap (Float) $ fmap (toElmFloat) $ (applyArith (/) i' j')
     rewrite _ = Nothing
 
-simpleRules = [reverseLiteral, applyAnd, pipeMap, mapComposition, constantAdd, constantSub, constantMult, constantIDiv]
+simpleRules = [reverseLiteral, applyAnd, applyOr, pipeMap, mapComposition, constantAdd, constantSub, constantMult, constantIDiv]
