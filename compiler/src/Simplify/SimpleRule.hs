@@ -59,5 +59,4 @@ pipeMap = SimpleRule apRFxn rewrite
       Just $ Call (VarGlobal mapFxn) [f, l]
     rewrite _ = Nothing
 
-
 simpleRules = [reverseLiteral, applyAnd, pipeMap, mapComposition]

@@ -205,16 +205,6 @@ rewriteExpr (If branches final) =
       else Just $ If branches' (fromMaybe final maybeFinal)
 rewriteExpr _ = Nothing
 
-uninlineable :: Name -> Expr -> Bool
-uninlineable var expr =
-  foldExpr aux (||) False expr
-  where
-    aux :: Expr -> Bool
-    aux (Destruct (Destructor _ path) _) | var == rootOfPath path = True
-    aux (Case _ root _ _) | var == root = True
-    aux (Let (Def v _) _) | var == v = True
-    aux _ = False
-
 -- TODO: Sometimes misses rewriting oppurtunities at inline site
 attemptInline :: Name -> Expr -> Expr -> Maybe Expr
 attemptInline var expr body =
@@ -224,6 +214,25 @@ attemptInline var expr body =
   else if numUses == 1 || isSmall expr then
     Just $ subst var expr body
   else Nothing
+
+uninlineable :: Name -> Expr -> Bool
+uninlineable var body =
+  foldExpr aux (||) False body
+  where
+    aux :: Expr -> Bool
+    aux (Destruct (Destructor _ path) _) | var == rootOfPath path = True
+    aux (Case _ root _ _) | var == root = True
+    aux (Let (Def v _) _) | var == v = True
+    aux _ = False
+
+-- TODO: You know this is wrong
+isRecursive :: Name -> Expr -> Bool
+isRecursive var expr =
+  foldExpr aux (||) False expr
+  where
+    aux :: Expr -> Bool
+    aux (VarLocal var') = var == var'
+    aux _ = False
 
 subst :: Name -> Expr -> Expr -> Expr
 subst var expr = mapExpr replaceVar
