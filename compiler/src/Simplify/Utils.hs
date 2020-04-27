@@ -5,6 +5,7 @@ import AST.Display ()
 import Control.Arrow (second)
 import qualified Data.List as List
 import qualified Data.Map as Map
+import qualified Data.Maybe as Maybe
 import qualified Data.MultiSet as MultiSet
 import Data.MultiSet (MultiSet)
 import qualified Data.Set as Set
@@ -38,10 +39,31 @@ liftEdit f x =
     Just x' -> Edited (x', True)
     Nothing -> Edited (x, False)
 
-editUntilFixpoint :: (a -> Edited a) -> a -> Edited a
-editUntilFixpoint f x =
-  let e@(Edited (x', b)) = f x
-  in if b then e >>= editUntilFixpoint f else Edited (x', False)
+editUntilFixpoint :: Maybe Int -> (a -> Edited a) -> a -> (Edited a, Int)
+editUntilFixpoint limit f x =
+  let e@(Edited ((_, n), _)) = aux limit f x in ( fst <$> e, n )
+  where
+    aux limit _ x
+      | Maybe.maybe False (\lim -> lim <= 0) limit = Edited ((x, 0), True)
+    aux limit f x =
+      let e@(Edited (x', b)) = f x in
+      let limit' = (\n -> n - 1) <$> limit in
+      fmap (second (+1)) $
+        if b then e >>= aux limit' f
+        else Edited ((x', 0), False)
+
+-- editUntilFixpoint :: Maybe Int -> (a -> Edited a) -> a -> ( Edited a, Int )
+-- editUntilFixpoint limit f x =
+--   let e@(Edited ((_, n), _)) = aux 0 f x in
+--   ( fst <$> e, n )
+--   where
+--     aux :: Int -> (a -> Edited a) -> a -> Edited ( a, Int )
+--     aux n _ x
+--       | Maybe.maybe False (\lim -> n >= lim) limit = Edited ((x, n), True)
+--     aux n f x =
+--       let e@(Edited (x', b)) = f x in
+--       let n' = n + 1 in
+--       if b then e >>= aux n' f else Edited ((x', n'), False)
 
 fromEdit :: Edited a -> a
 fromEdit (Edited (x, _)) = x

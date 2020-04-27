@@ -5,6 +5,7 @@ module Generate
   , prod
   , prod'
   , SimplifyOptions (..)
+  , DumpOptions (..)
   , repl
   )
   where
@@ -12,7 +13,7 @@ module Generate
 
 import Prelude hiding (cycle, print)
 import Control.Concurrent (MVar, forkIO, newEmptyMVar, newMVar, putMVar, readMVar)
-import Control.Monad (liftM2)
+import Control.Monad (liftM2, when)
 import qualified Data.ByteString.Builder as B
 import Data.Map ((!))
 import qualified Data.Map as Map
@@ -82,27 +83,35 @@ prod root details (Build.Artifacts pkg _ roots modules) =
       return $ JS.generate mode graph mains
 
 data SimplifyOptions = SimplifyOptions
-  { opt :: Bool
-  , dump :: Bool
+  { simplifyEnabled :: Bool
+  , simplifyLimit :: Maybe Int
+  }
+
+data DumpOptions = DumpOptions
+  { dump :: Bool
   , dumpOrig :: Bool
   , dumpMains :: Bool
   }
 
-prod' :: SimplifyOptions -> FilePath -> Details.Details -> Build.Artifacts -> Task B.Builder
-prod' (SimplifyOptions opt dump dumpOrig dumpMains)
+prod' :: SimplifyOptions -> DumpOptions -> FilePath -> Details.Details -> Build.Artifacts -> Task B.Builder
+prod' (SimplifyOptions simplifyEnabled simplifyLimit) (DumpOptions dump dumpOrig dumpMains)
   root details (Build.Artifacts pkg _ roots modules) =
+  let shouldSimplify = simplifyEnabled || dump in
   do  objects <- finalizeObjects =<< loadObjects root details modules
       checkForDebugUses objects
       let graph = objectsToGlobalGraph objects
       let mains = gatherMains pkg objects roots
-      let graph' = Simpl.simplify mains graph
+      let (graph', simplifyIterations) = if shouldSimplify then
+                                           Simpl.simplify simplifyLimit mains graph
+                                         else (graph, 0)
       let mode = Mode.Prod (Mode.shortenFieldNames graph')
       return $ unsafePerformIO $ do
-        if dumpOrig then putStrLn $ show graph else return ()
-        if dump then putStrLn $ show graph' else return ()
-        if dumpMains then putStrLn $ show mains else return ()
-        if opt then putStrLn "Generating simplified code" else return ()
-        return $ JS.generate mode (if opt then graph' else graph) mains
+        when dumpOrig (putStrLn "Dumping original graph" >> putStrLn (show graph))
+        when dump (putStrLn "Dumping simplified graph" >> putStrLn (show graph'))
+        when dumpMains (putStrLn "Dumping mains" >> putStrLn (show mains))
+        when shouldSimplify (putStrLn $ "Ran " ++ show simplifyIterations ++ " iterations of simplify pass")
+        when simplifyEnabled (putStrLn "Generating simplified code")
+        return $ JS.generate mode (if simplifyEnabled then graph' else graph) mains
 
 repl :: FilePath -> Details.Details -> Bool -> Build.ReplArtifacts -> N.Name -> Task B.Builder
 repl root details ansi (Build.ReplArtifacts home modules localizer annotations) name =
